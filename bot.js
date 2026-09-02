@@ -213,6 +213,8 @@ async function run() {
     let consecutiveSkips = 0;
     let discoveriesToFlush = {};
 
+    let lastRequestStart = null;
+
     const flushToD1 = async ({ signal = null } = {}) => {
       let flushCount = 0;
       const remaining = {}; // sectors that failed to sync stay queued for the next flush
@@ -276,7 +278,6 @@ async function run() {
       }
 
       let resolved = false;
-      let lastRequestStart = null;
 
       while (!resolved && !isShuttingDown) {
         const reqStart = Date.now();
