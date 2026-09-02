@@ -1,14 +1,29 @@
 import { PNG } from 'pngjs';
 
+// Safe integer parser with fallback
+function parseEnvInt(val, fallback) {
+  const parsed = parseInt(val, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // Configuration from Environment Variables
 const WORKER_URL = process.env.WORKER_URL;
 const START_X = parseInt(process.env.START_X, 10);
 const START_Y = parseInt(process.env.START_Y, 10);
 const END_X = parseInt(process.env.END_X, 10);
 const END_Y = parseInt(process.env.END_Y, 10);
-const RUN_DURATION_MS = (parseInt(process.env.RUN_DURATION_MINS, 10) || 20) * 60 * 1000;
-const PAUSE_INTERVAL_MS = (parseInt(process.env.PAUSE_INTERVAL_MINS, 10) || 10) * 60 * 1000;
-const TOTAL_CYCLES = parseInt(process.env.TOTAL_CYCLES, 10) || 1;
+
+const RUN_DURATION_MS = parseEnvInt(process.env.RUN_DURATION_MINS, 20) * 60 * 1000;
+const PAUSE_INTERVAL_MS = parseEnvInt(process.env.PAUSE_INTERVAL_MINS, 10) * 60 * 1000;
+const TOTAL_CYCLES = parseEnvInt(process.env.TOTAL_CYCLES, 1);
+
+// Customizable Cadence & Auto-Tuning Defaults
+const CFG_TARGET_INTERVAL = parseEnvInt(process.env.TARGET_INTERVAL, 500);
+const CFG_MIN_FLOOR = parseEnvInt(process.env.MIN_FLOOR, 399);
+const CFG_PAUSE_SEC_429 = parseEnvInt(process.env.PAUSE_SEC_429, 321);
+const CFG_PENALTY_MS_429 = parseEnvInt(process.env.PENALTY_MS_429, 500);
+const CFG_STEP_DOWN_MS = parseEnvInt(process.env.STEP_DOWN_MS, 21);
+const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
 
 const TILE_SIZE = 1000;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,8 +100,9 @@ async function run() {
   const maxY = Math.max(START_Y, END_Y);
   const totalPixels = (maxX - minX + 1) * (maxY - minY + 1);
 
-  console.log(`Target: [${minX}, ${minY}] to [${maxX}, ${maxY}] (${totalPixels} total pixels)`);
-  console.log(`Execution plan: ${TOTAL_CYCLES} cycle(s), max ${RUN_DURATION_MS / 60000}m run per cycle`);
+  console.log(`Target Coordinates: [${minX}, ${minY}] to [${maxX}, ${maxY}] (${totalPixels} total pixels)`);
+  console.log(`Execution Plan: ${TOTAL_CYCLES} cycle(s), max ${RUN_DURATION_MS / 60000}m run per cycle`);
+  console.log(`Pacing Settings: Target=${CFG_TARGET_INTERVAL}ms | Floor=${CFG_MIN_FLOOR}ms | 429Pause=${CFG_PAUSE_SEC_429}s | Penalty=+${CFG_PENALTY_MS_429}ms | Step=-${CFG_STEP_DOWN_MS}ms (streak: ${CFG_STREAK_REQS})`);
 
   for (let cycle = 1; cycle <= TOTAL_CYCLES; cycle++) {
     console.log(`\n================== STARTING CYCLE ${cycle}/${TOTAL_CYCLES} ==================`);
@@ -152,10 +168,14 @@ async function run() {
       break;
     }
 
-    // 4. Cadence-Paced Scanning
-    let targetInterval = 450;
-    let minFloor = 150;
-    const streakReqs = 30;
+    // 4. Cadence-Paced Scanning with Dynamic Auto-Tuning
+    let targetInterval = CFG_TARGET_INTERVAL;
+    let minFloor = CFG_MIN_FLOOR;
+    const pauseSec = CFG_PAUSE_SEC_429;
+    const penaltyMs = CFG_PENALTY_MS_429;
+    const stepDownMs = CFG_STEP_DOWN_MS;
+    const streakReqs = CFG_STREAK_REQS;
+
     let consecutiveSuccesses = 0;
     const discoveriesToFlush = {};
 
@@ -186,8 +206,8 @@ async function run() {
           if (!discoveriesToFlush[sectorKey]) discoveriesToFlush[sectorKey] = { tx: tileX, ty: tileY, data: {} };
           discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = record;
 
-          if (consecutiveSuccesses >= streakReqs && targetInterval > minFloor) {
-            targetInterval = Math.max(minFloor, targetInterval - 10);
+          if (stepDownMs > 0 && consecutiveSuccesses >= streakReqs && targetInterval > minFloor) {
+            targetInterval = Math.max(minFloor, targetInterval - stepDownMs);
             consecutiveSuccesses = 0;
           }
 
@@ -196,14 +216,16 @@ async function run() {
           if (sleepRemaining > 0) await wait(sleepRemaining);
 
           if (scannedThisCycle % 25 === 0) {
-            console.log(`[Cycle ${cycle}] Scanned ${scannedThisCycle} pixels (cadence: ${targetInterval}ms)...`);
+            console.log(`[Cycle ${cycle}] Scanned ${scannedThisCycle} pixels (cadence: ${targetInterval}ms, floor: ${minFloor}ms)...`);
           }
         } else if (res.status === 429) {
-          console.warn(`[Cycle ${cycle}] Rate limited (429)! Backing off for 65s...`);
           consecutiveSuccesses = 0;
-          minFloor = targetInterval + 10;
-          targetInterval += 100;
-          await wait(65000);
+          const learnedFloor = targetInterval + Math.max(10, stepDownMs);
+          if (learnedFloor > minFloor) minFloor = learnedFloor;
+          targetInterval += penaltyMs;
+
+          console.warn(`[Cycle ${cycle}] Rate limited (429)! Learned floor: ${minFloor}ms. Pausing for ${pauseSec}s... New target: ${targetInterval}ms`);
+          await wait(pauseSec * 1000);
         } else {
           console.warn(`[Cycle ${cycle}] HTTP ${res.status || 'Network Error'}. Retrying in 3s...`);
           await wait(3000);

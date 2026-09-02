@@ -34,6 +34,36 @@ on:
         required: true
         default: '1'
         type: string
+      target_interval:
+        description: 'Target Interval ms (Default: 500)'
+        required: false
+        default: '500'
+        type: string
+      min_floor:
+        description: 'Min Floor ms (Default: 399)'
+        required: false
+        default: '399'
+        type: string
+      pause_sec_429:
+        description: '429 Pause sec (Default: 321)'
+        required: false
+        default: '321'
+        type: string
+      penalty_ms_429:
+        description: '429 Penalty +ms (Default: 500)'
+        required: false
+        default: '500'
+        type: string
+      step_down_ms:
+        description: 'Speed Step -ms (Default: 21)'
+        required: false
+        default: '21'
+        type: string
+      streak_reqs:
+        description: 'Streak for Step (Default: 42)'
+        required: false
+        default: '42'
+        type: string
 
 jobs:
   scan:
@@ -60,4 +90,10 @@ jobs:
           RUN_DURATION_MINS: ${{ inputs.run_duration_mins }}
           PAUSE_INTERVAL_MINS: ${{ inputs.pause_interval_mins }}
           TOTAL_CYCLES: ${{ inputs.total_cycles }}
+          TARGET_INTERVAL: ${{ inputs.target_interval }}
+          MIN_FLOOR: ${{ inputs.min_floor }}
+          PAUSE_SEC_429: ${{ inputs.pause_sec_429 }}
+          PENALTY_MS_429: ${{ inputs.penalty_ms_429 }}
+          STEP_DOWN_MS: ${{ inputs.step_down_ms }}
+          STREAK_REQS: ${{ inputs.streak_reqs }}
         run: node bot.js
