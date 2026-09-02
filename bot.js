@@ -151,7 +151,7 @@ async function run() {
   log(`Execution Plan: ${TOTAL_CYCLES} cycle(s), max ${CYCLE_DURATION_MS / 60000}m run per cycle (${RUN_DURATION_MS / 60000}m total)`);
   log(`Pause between cycles: ${PAUSE_INTERVAL_MS} seconds`);
   log(`Target interval: ${CFG_TARGET_INTERVAL}ms`);
-  log(`Min floor: ${MIN_FLOOR}ms`);
+  log(`Min floor: ${CFG_MIN_FLOOR}ms`);
   log(`429 penalty: ${CFG_PENALTY_MS_429}ms`);
   log(`429 pause: ${CFG_PAUSE_SEC_429} seconds`);
   log(`Step down: ${CFG_STEP_DOWN_MS}ms`);
