@@ -2,8 +2,8 @@ name: Wplace Background Scanner
 
 on:
   schedule:
-    # Runs at minute 0 every 2 hours UTC
-    - cron: '0 */2 * * *'
+    # Runs at minute 42 every 2 hours UTC
+    - cron: '42 */2 * * *'
 
   workflow_dispatch:
     inputs:
@@ -70,6 +70,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm install
