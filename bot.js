@@ -276,9 +276,17 @@ async function run() {
       }
 
       let resolved = false;
+      let lastRequestStart = null;
 
       while (!resolved && !isShuttingDown) {
         const reqStart = Date.now();
+
+        const actualCadence = lastRequestStart === null
+          ? null
+          : reqStart - lastRequestStart;
+        
+        lastRequestStart = reqStart;
+        
         const res = await fetchPixelOfficial(tileX, tileY, pixelX, pixelY);
         const duration = Date.now() - reqStart;
 
@@ -306,7 +314,17 @@ async function run() {
           if (scannedThisCycle % LOG_INTERVAL === 0) {
             const cycleTimeRemainingMins = ((CYCLE_DURATION_MS - (Date.now() - cycleStartTime)) / 60000).toFixed(1);
             const timeRemainingMins = ((RUN_DURATION_MS - (Date.now() - cycleStartTime)) / 60000).toFixed(1);
-            log(`[Progress] Scanned ${scannedThisCycle}/${pendingTasks.length} pixels | cadence: ${targetInterval}ms | cycle time left: ${cycleTimeRemainingMins}m | total time left: ${timeRemainingMins}m`);
+            const actualCadenceText = actualCadence === null
+              ? 'N/A'
+              : `${actualCadence}ms`;
+
+            log(
+              `[Progress] Scanned ${scannedThisCycle}/${pendingTasks.length} pixels | ` +
+              `cadence: ${targetInterval}ms (actual: ${actualCadenceText}) | ` +
+              `request: ${duration}ms | ` +
+              `cycle time left: ${cycleTimeRemainingMins}m | ` +
+              `total time left: ${timeRemainingMins}m`
+            );
           }
 
           const sleepRemaining = Math.max(0, targetInterval - duration);
