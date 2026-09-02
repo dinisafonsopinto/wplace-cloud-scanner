@@ -79,8 +79,8 @@ async function fetchBackendTile(tileX, tileY) {
   return {};
 }
 
-async function syncBackendTile(tileX, tileY, batchMap) {
-  if (Object.keys(batchMap).length === 0) return;
+async function syncBackendTile(tileX, tileY, batchMap, signal = null) {
+  if (Object.keys(batchMap).length === 0) return true;
   try {
     const res = await fetch(`${WORKER_URL}/tile/${tileX}/${tileY}`, {
       method: 'POST',
@@ -89,14 +89,21 @@ async function syncBackendTile(tileX, tileY, batchMap) {
         'Accept': 'application/json'
       },
       body: JSON.stringify(batchMap),
-      signal: AbortSignal.any([
-        AbortSignal.timeout(20000), 
-        shutdownController.signal
-      ]),
+      // Callers pass their own signal. Normal flushes get the shutdown-aware
+      // signal so they abort promptly on cancel; the final shutdown flush
+      // passes an independent timeout instead (see run()), since by the time
+      // it runs shutdownController.signal is already aborted and would make
+      // this fetch fail instantly.
+      signal: signal ?? AbortSignal.any([AbortSignal.timeout(20000), shutdownController.signal]),
     });
-    if (!res.ok) log(`Failed to sync sector (${tileX}, ${tileY}): HTTP ${res.status}`, 'warn');
+    if (!res.ok) {
+      log(`Failed to sync sector (${tileX}, ${tileY}): HTTP ${res.status}`, 'warn');
+      return false;
+    }
+    return true;
   } catch (err) {
     log(`Error syncing sector (${tileX}, ${tileY}): ${err.message}`, 'warn');
+    return false;
   }
 }
 
@@ -206,29 +213,39 @@ async function run() {
     let consecutiveSkips = 0;
     let discoveriesToFlush = {};
 
-    const flushToD1 = async (final = false) => {
+    const flushToD1 = async ({ signal = null } = {}) => {
       let flushCount = 0;
-      for (const sector of Object.values(discoveriesToFlush)) {
+      const remaining = {}; // sectors that failed to sync stay queued for the next flush
+
+      for (const [key, sector] of Object.entries(discoveriesToFlush)) {
         const keysCount = Object.keys(sector.data).length;
-        if (keysCount > 0) {
-          await syncBackendTile(sector.tx, sector.ty, sector.data);
+        if (keysCount === 0) continue;
+        const ok = await syncBackendTile(sector.tx, sector.ty, sector.data, signal);
+        if (ok) {
           flushCount += keysCount;
+        } else {
+          remaining[key] = sector;
         }
       }
-      
+
       if (flushCount > 0) {
-        log(`Flushed ${flushCount} pixels to D1. Pulling latest cloud state...`, 'success');
-        
-        // if final, don't fetch back anything or empty out discoveriesToFlush
-        if (final) return;
-        
-        // Mid-scan cache update: Fetch all intersecting tiles to catch userscript discoveries
-        for (const { tx, ty } of intersectingTiles) {
-            const updatedData = await fetchBackendTile(tx, ty);
-            cloudCache.set(`${tx}_${ty}`, updatedData);
+        log(`Flushed ${flushCount} pixels to D1.`, 'success');
+
+        // Mid-scan cache update: Fetch all intersecting tiles to catch userscript discoveries.
+        // Skip this during shutdown — it's not needed before exit and eats into the ~10s
+        // grace period GitHub Actions gives the process to terminate after cancellation.
+        if (!isShuttingDown) {
+          log(`Pulling latest cloud state...`);
+          for (const { tx, ty } of intersectingTiles) {
+              const updatedData = await fetchBackendTile(tx, ty);
+              cloudCache.set(`${tx}_${ty}`, updatedData);
+          }
         }
       }
-      discoveriesToFlush = {}; // Reset queue after flush
+      if (Object.keys(remaining).length > 0) {
+        log(`${Object.keys(remaining).length} sector(s) failed to sync — will retry on next flush.`, 'warn');
+      }
+      discoveriesToFlush = remaining; // only clear sectors that actually synced
     };
 
     // Main Scanning Loop
@@ -253,8 +270,8 @@ async function run() {
           consecutiveSkips++;
           continue; 
       } else if (consecutiveSkips > 0) {
-        consecutiveSkips = 0;
         log(`Skipped ${consecutiveSkips} pixels - already discovered by another bot/user!`);
+        consecutiveSkips = 0;
         continue;
       }
 
@@ -311,8 +328,12 @@ async function run() {
       }
     }
 
-    // Final end-of-cycle flush
-    await flushToD1(true);
+    // Final end-of-cycle flush. On a normal cycle end this uses the default
+    // shutdown-aware signal. On a cancellation, shutdownController.signal is
+    // already aborted by now, so we give this call its own short-lived
+    // timeout instead — otherwise the "emergency" flush would fail instantly
+    // and every unsaved pixel from this cycle would be lost.
+    await flushToD1(isShuttingDown ? { signal: AbortSignal.timeout(6000) } : {});
 
     if (cycle < TOTAL_CYCLES && !isShuttingDown) {
       log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);
