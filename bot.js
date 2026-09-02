@@ -22,7 +22,7 @@ const CFG_PAUSE_SEC_429 = parseEnvInt(process.env.PAUSE_SEC_429, 321);
 const CFG_PENALTY_MS_429 = parseEnvInt(process.env.PENALTY_MS_429, 500);
 const CFG_STEP_DOWN_MS = parseEnvInt(process.env.STEP_DOWN_MS, 21);
 const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
-const FLUSH_INTERVAL = parseEnvInt(process.env.STREAK_REQS, 1000); // Auto-save every 200 pixels
+const FLUSH_INTERVAL = parseEnvInt(process.env.FLUSH_INTERVAL, 1000); // Auto-save every 200 pixels
 
 const TILE_SIZE = 1000;
 const LOG_INTERVAL = 200; // Log every 200 pixels

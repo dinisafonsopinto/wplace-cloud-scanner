@@ -26,47 +26,38 @@ on:
       run_duration_mins:
         description: 'Run duration mins'
         required: false
-        default: '100'
         type: string
       target_interval:
         description: 'Target Interval (ms)'
         required: false
-        default: '500'
         type: string
       min_floor:
         description: 'Min Floor (ms)'
         required: false
-        default: '399'
         type: string
       pause_sec_429:
         description: '429 Pause (s)'
         required: false
-        default: '321'
         type: string
       penalty_ms_429:
         description: '429 Penalty (+ms)'
         required: false
-        default: '500'
         type: string
       step_down_ms:
         description: 'Speed Step (-ms)'
         required: false
-        default: '21'
         type: string
       streak_reqs:
         description: 'Streak for Step'
         required: false
-        default: '42'
         type: string
       total_cycles:
         description: 'Amount of Cycles'
         required: false
-        default: '1'
         type: string
       pause_interval_secs:
         description: 'Pause between Cycles (s)'
         required: false
-        default: '30'
         type: string
 
 jobs:
