@@ -206,7 +206,7 @@ async function run() {
     let consecutiveSkips = 0;
     let discoveriesToFlush = {};
 
-    const flushToD1 = async () => {
+    const flushToD1 = async (final = false) => {
       let flushCount = 0;
       for (const sector of Object.values(discoveriesToFlush)) {
         const keysCount = Object.keys(sector.data).length;
@@ -218,6 +218,9 @@ async function run() {
       
       if (flushCount > 0) {
         log(`Flushed ${flushCount} pixels to D1. Pulling latest cloud state...`, 'success');
+        
+        // if final, don't fetch back anything or empty out discoveriesToFlush
+        if (final) return;
         
         // Mid-scan cache update: Fetch all intersecting tiles to catch userscript discoveries
         for (const { tx, ty } of intersectingTiles) {
@@ -309,7 +312,7 @@ async function run() {
     }
 
     // Final end-of-cycle flush
-    await flushToD1();
+    await flushToD1(true);
 
     if (cycle < TOTAL_CYCLES && !isShuttingDown) {
       log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);

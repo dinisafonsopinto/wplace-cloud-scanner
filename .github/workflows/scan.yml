@@ -94,4 +94,4 @@ jobs:
           STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || vars.STEP_DOWN_MS || '21' }}
           STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || vars.STREAK_REQS || '42' }}
           FLUSH_INTERVAL: ${{ vars.FLUSH_INTERVAL || '1000' }}
-        run: node bot.js
+        run: exec node bot.js
