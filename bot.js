@@ -14,6 +14,7 @@ const END_Y = parseInt(process.env.END_Y, 10);
 const RUN_DURATION_MS = parseEnvInt(process.env.RUN_DURATION_MINS, 20) * 60 * 1000;
 const PAUSE_INTERVAL_MS = parseEnvInt(process.env.PAUSE_INTERVAL_SECS, 10) * 1000;
 const TOTAL_CYCLES = parseEnvInt(process.env.TOTAL_CYCLES, 1);
+const CYCLE_DURATION_MS = Math.ceil(RUN_DURATION_MS / TOTAL_CYCLES);
 
 const CFG_TARGET_INTERVAL = parseEnvInt(process.env.TARGET_INTERVAL, 500);
 const CFG_MIN_FLOOR = parseEnvInt(process.env.MIN_FLOOR, 399);
@@ -122,7 +123,15 @@ async function run() {
   const totalPixels = (maxX - minX + 1) * (maxY - minY + 1);
 
   log(`Target Coordinates: [${minX}, ${minY}] to [${maxX}, ${maxY}] (${totalPixels} total pixels)`);
-  log(`Execution Plan: ${TOTAL_CYCLES} cycle(s), max ${RUN_DURATION_MS / 60000}m run per cycle`);
+  log(`Execution Plan: ${TOTAL_CYCLES} cycle(s), max ${CYCLE_DURATION_MS / 60000}m run per cycle (${RUN_DURATION_MS / 60000}m total)`);
+  log(`Pause between cycles: ${PAUSE_INTERVAL_MS} seconds`);
+  log(`Target interval: ${CFG_TARGET_INTERVAL}ms`);
+  log(`Min floor: ${MIN_FLOOR}ms`);
+  log(`429 penalty: ${CFG_PENALTY_MS_429}ms`);
+  log(`429 pause: ${CFG_PAUSE_SEC_429} seconds`);
+  log(`Step down: ${CFG_STEP_DOWN_MS}ms`);
+  log(`Streak reqs: ${CFG_STREAK_REQS}`);
+  log(`Flush interval: ${FLUSH_INTERVAL}ms`);
 
   for (let cycle = 1; cycle <= TOTAL_CYCLES; cycle++) {
     if (isShuttingDown) break;
@@ -200,8 +209,8 @@ async function run() {
         log(`Manual cancellation detected! Halting loop...`, 'warn');
         break; 
       }
-      if (Date.now() - cycleStartTime >= RUN_DURATION_MS) {
-        log(`Time window of ${RUN_DURATION_MS / 60000}m reached. Stopping queries...`, 'warn');
+      if (Date.now() - cycleStartTime >= CYCLE_DURATION_MS) {
+        log(`Time window of ${CYCLE_DURATION_MS / 60000}m reached. Stopping cycle...`, 'warn');
         break;
       }
 
@@ -250,8 +259,9 @@ async function run() {
           }
 
           if (scannedThisCycle % LOG_INTERVAL === 0) {
+            const cycleTimeRemainingMins = ((CYCLE_DURATION_MS - (Date.now() - cycleStartTime)) / 60000).toFixed(1);
             const timeRemainingMins = ((RUN_DURATION_MS - (Date.now() - cycleStartTime)) / 60000).toFixed(1);
-            log(`[Progress] Scanned ${scannedThisCycle}/${pendingTasks.length} pixels | cadence: ${targetInterval}ms | time left: ${timeRemainingMins}m`);
+            log(`[Progress] Scanned ${scannedThisCycle}/${pendingTasks.length} pixels | cadence: ${targetInterval}ms | cycle time left: ${cycleTimeRemainingMins}m | total time left: ${timeRemainingMins}m`);
           }
 
           const sleepRemaining = Math.max(0, targetInterval - duration);
