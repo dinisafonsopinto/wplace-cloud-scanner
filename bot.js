@@ -29,6 +29,7 @@ const LOG_INTERVAL = 200; // Log every 200 pixels
 
 // Global Shutdown Flag
 let isShuttingDown = false;
+const shutdownController = new AbortController();
 
 function log(msg, type = 'info') {
   const ts = new Date().toISOString().substring(11, 19);
@@ -47,7 +48,14 @@ function getCoords(absX, absY) {
   };
 }
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const wait = (ms, signal = null) => new Promise((resolve) => {
+  if (signal?.aborted) return resolve();
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => {
+    clearTimeout(timer);
+    resolve();
+  }, { once: true });
+});
 
 async function fetchBackendTile(tileX, tileY) {
   try {
@@ -58,7 +66,10 @@ async function fetchBackendTile(tileX, tileY) {
     const res = await fetch(url, { 
       // Also strictly instruct Node's internal fetch not to cache
       cache: 'no-store', 
-      signal: AbortSignal.timeout(15000) 
+      signal: AbortSignal.any([
+        AbortSignal.timeout(15000), 
+        shutdownController.signal
+      ]),
     });
     
     if (res.ok) return await res.json();
@@ -78,7 +89,10 @@ async function syncBackendTile(tileX, tileY, batchMap) {
         'Accept': 'application/json'
       },
       body: JSON.stringify(batchMap),
-      signal: AbortSignal.timeout(20000)
+      signal: AbortSignal.any([
+        AbortSignal.timeout(20000), 
+        shutdownController.signal
+      ]),
     });
     if (!res.ok) log(`Failed to sync sector (${tileX}, ${tileY}): HTTP ${res.status}`, 'warn');
   } catch (err) {
@@ -88,7 +102,12 @@ async function syncBackendTile(tileX, tileY, batchMap) {
 
 async function fetchTileImageData(tileX, tileY) {
   const url = `https://backend.wplace.live/files/s0/tiles/${tileX}/${tileY}.png`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+  const res = await fetch(url, {
+    signal: AbortSignal.any([
+      AbortSignal.timeout(30000), 
+      shutdownController.signal
+    ]),
+  });
   if (!res.ok) throw new Error(`Tile HTTP ${res.status}`);
   const arrayBuffer = await res.arrayBuffer();
   return PNG.sync.read(Buffer.from(arrayBuffer));
@@ -103,7 +122,13 @@ function getTilePixelColor(png, pixelX, pixelY) {
 async function fetchPixelOfficial(tileX, tileY, pixelX, pixelY) {
   const url = `https://backend.wplace.live/s0/pixel/${tileX}/${tileY}?x=${pixelX}&y=${pixelY}`;
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.any([
+        AbortSignal.timeout(15000), 
+        shutdownController.signal
+      ])
+    });
     if (res.ok) {
       const data = await res.json();
       return { success: true, username: data?.paintedBy?.name || 'Blank / Unknown' };
@@ -265,20 +290,20 @@ async function run() {
           }
 
           const sleepRemaining = Math.max(0, targetInterval - duration);
-          if (sleepRemaining > 0) await wait(sleepRemaining);
+          if (sleepRemaining > 0) await wait(sleepRemaining, shutdownController.signal);
 
         } else if (res.status === 429) {
           consecutiveSuccesses = 0;
           minFloor = Math.max(minFloor, targetInterval + Math.max(10, CFG_STEP_DOWN_MS));
           targetInterval += CFG_PENALTY_MS_429;
           log(`Rate limited! Learned floor: ${minFloor}ms. Pausing for ${CFG_PAUSE_SEC_429}s...`, 'warn');
-          await wait(CFG_PAUSE_SEC_429 * 1000);
+          await wait(CFG_PAUSE_SEC_429 * 1000, shutdownController.signal);
         } else if (res.status === 408) {
           log(`Connection Timeout. Retrying in 30s...`, 'warn');
-          await wait(30000);
+          await wait(30000, shutdownController.signal);
         } else {
           log(`HTTP ${res.status || 'Network Error'}. Retrying in 30s...`, 'error');
-          await wait(30000);
+          await wait(30000, shutdownController.signal);
         }
       }
     }
@@ -288,7 +313,7 @@ async function run() {
 
     if (cycle < TOTAL_CYCLES && !isShuttingDown) {
       log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);
-      await wait(PAUSE_INTERVAL_MS);
+      await wait(PAUSE_INTERVAL_MS, shutdownController.signal);
     }
   }
 
@@ -301,6 +326,7 @@ const handleShutdown = () => {
   if (isShuttingDown) return; // Prevent double-triggering
   log('Received cancel signal (SIGINT/SIGTERM) from GitHub! Initiating emergency flush...', 'warn');
   isShuttingDown = true;
+  shutdownController.abort();
 };
 
 process.on('SIGINT', handleShutdown);
