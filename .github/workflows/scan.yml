@@ -1,38 +1,32 @@
 name: Wplace Background Scanner
 
 on:
+  schedule:
+    # Runs at minute 0 every 2 hours UTC
+    - cron: '0 */2 * * *'
+
   workflow_dispatch:
     inputs:
       start_x:
-        description: 'Start X coordinate'
-        required: true
+        description: 'Start X (Blank = use saved Target)'
+        required: false
         type: string
       start_y:
-        description: 'Start Y coordinate'
-        required: true
+        description: 'Start Y (Blank = use saved Target)'
+        required: false
         type: string
       end_x:
-        description: 'End X coordinate'
-        required: true
+        description: 'End X (Blank = use saved Target)'
+        required: false
         type: string
       end_y:
-        description: 'End Y coordinate'
-        required: true
+        description: 'End Y (Blank = use saved Target)'
+        required: false
         type: string
       run_duration_mins:
-        description: 'Run duration per cycle (Minutes)'
-        required: true
-        default: '20'
-        type: string
-      pause_interval_mins:
-        description: 'Pause duration between cycles (Minutes)'
-        required: true
-        default: '10'
-        type: string
-      total_cycles:
-        description: 'Total cycles to run'
-        required: true
-        default: '1'
+        description: 'Run duration mins (Default: 25)'
+        required: false
+        default: '100'
         type: string
       target_interval:
         description: 'Target Interval ms (Default: 500)'
@@ -83,17 +77,17 @@ jobs:
       - name: Execute Scanner
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
-          START_X: ${{ inputs.start_x }}
-          START_Y: ${{ inputs.start_y }}
-          END_X: ${{ inputs.end_x }}
-          END_Y: ${{ inputs.end_y }}
-          RUN_DURATION_MINS: ${{ inputs.run_duration_mins }}
-          PAUSE_INTERVAL_MINS: ${{ inputs.pause_interval_mins }}
-          TOTAL_CYCLES: ${{ inputs.total_cycles }}
-          TARGET_INTERVAL: ${{ inputs.target_interval }}
-          MIN_FLOOR: ${{ inputs.min_floor }}
-          PAUSE_SEC_429: ${{ inputs.pause_sec_429 }}
-          PENALTY_MS_429: ${{ inputs.penalty_ms_429 }}
-          STEP_DOWN_MS: ${{ inputs.step_down_ms }}
-          STREAK_REQS: ${{ inputs.streak_reqs }}
+          START_X: ${{ inputs.start_x != '' && inputs.start_x || vars.TARGET_START_X }}
+          START_Y: ${{ inputs.start_y != '' && inputs.start_y || vars.TARGET_START_Y }}
+          END_X: ${{ inputs.end_x != '' && inputs.end_x || vars.TARGET_END_X }}
+          END_Y: ${{ inputs.end_y != '' && inputs.end_y || vars.TARGET_END_Y }}
+          RUN_DURATION_MINS: ${{ inputs.run_duration_mins != '' && inputs.run_duration_mins || '25' }}
+          PAUSE_INTERVAL_MINS: '0'
+          TOTAL_CYCLES: '1'
+          TARGET_INTERVAL: ${{ inputs.target_interval != '' && inputs.target_interval || '500' }}
+          MIN_FLOOR: ${{ inputs.min_floor != '' && inputs.min_floor || '399' }}
+          PAUSE_SEC_429: ${{ inputs.pause_sec_429 != '' && inputs.pause_sec_429 || '321' }}
+          PENALTY_MS_429: ${{ inputs.penalty_ms_429 != '' && inputs.penalty_ms_429 || '500' }}
+          STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || '21' }}
+          STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || '42' }}
         run: node bot.js
