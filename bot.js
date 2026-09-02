@@ -24,6 +24,7 @@ const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
 
 const TILE_SIZE = 1000;
 const FLUSH_INTERVAL = 1000; // Auto-save every 200 pixels
+const LOG_INTERVAL = 200; // Log every 200 pixels
 
 // Global Shutdown Flag
 let isShuttingDown = false;
@@ -212,7 +213,7 @@ async function run() {
             await flushToD1();
           }
 
-          if (scannedThisCycle % 25 === 0) {
+          if (scannedThisCycle % LOG_INTERVAL === 0) {
             const timeRemainingMins = ((RUN_DURATION_MS - (Date.now() - cycleStartTime)) / 60000).toFixed(1);
             log(`[Progress] Scanned ${scannedThisCycle}/${pendingTasks.length} pixels | cadence: ${targetInterval}ms | time left: ${timeRemainingMins}m`);
           }
