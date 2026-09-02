@@ -1,0 +1,63 @@
+name: Wplace Background Scanner
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_x:
+        description: 'Start X coordinate'
+        required: true
+        type: string
+      start_y:
+        description: 'Start Y coordinate'
+        required: true
+        type: string
+      end_x:
+        description: 'End X coordinate'
+        required: true
+        type: string
+      end_y:
+        description: 'End Y coordinate'
+        required: true
+        type: string
+      run_duration_mins:
+        description: 'Run duration per cycle (Minutes)'
+        required: true
+        default: '20'
+        type: string
+      pause_interval_mins:
+        description: 'Pause duration between cycles (Minutes)'
+        required: true
+        default: '10'
+        type: string
+      total_cycles:
+        description: 'Total cycles to run'
+        required: true
+        default: '1'
+        type: string
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Execute Scanner
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          START_X: ${{ inputs.start_x }}
+          START_Y: ${{ inputs.start_y }}
+          END_X: ${{ inputs.end_x }}
+          END_Y: ${{ inputs.end_y }}
+          RUN_DURATION_MINS: ${{ inputs.run_duration_mins }}
+          PAUSE_INTERVAL_MINS: ${{ inputs.pause_interval_mins }}
+          TOTAL_CYCLES: ${{ inputs.total_cycles }}
+        run: node bot.js

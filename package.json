@@ -1,0 +1,11 @@
+{
+    "name": "wplace-cloud-scanner",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+      "start": "node bot.js"
+    },
+    "dependencies": {
+      "pngjs": "^7.0.0"
+    }
+  }
