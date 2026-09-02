@@ -12,7 +12,7 @@ const END_X = parseInt(process.env.END_X, 10);
 const END_Y = parseInt(process.env.END_Y, 10);
 
 const RUN_DURATION_MS = parseEnvInt(process.env.RUN_DURATION_MINS, 20) * 60 * 1000;
-const PAUSE_INTERVAL_MS = parseEnvInt(process.env.PAUSE_INTERVAL_MINS, 10) * 60 * 1000;
+const PAUSE_INTERVAL_MS = parseEnvInt(process.env.PAUSE_INTERVAL_SECS, 10) * 1000;
 const TOTAL_CYCLES = parseEnvInt(process.env.TOTAL_CYCLES, 1);
 
 const CFG_TARGET_INTERVAL = parseEnvInt(process.env.TARGET_INTERVAL, 500);
@@ -21,9 +21,9 @@ const CFG_PAUSE_SEC_429 = parseEnvInt(process.env.PAUSE_SEC_429, 321);
 const CFG_PENALTY_MS_429 = parseEnvInt(process.env.PENALTY_MS_429, 500);
 const CFG_STEP_DOWN_MS = parseEnvInt(process.env.STEP_DOWN_MS, 21);
 const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
+const FLUSH_INTERVAL = parseEnvInt(process.env.STREAK_REQS, 1000); // Auto-save every 200 pixels
 
 const TILE_SIZE = 1000;
-const FLUSH_INTERVAL = 1000; // Auto-save every 200 pixels
 const LOG_INTERVAL = 200; // Log every 200 pixels
 
 // Global Shutdown Flag
@@ -50,7 +50,16 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchBackendTile(tileX, tileY) {
   try {
-    const res = await fetch(`${WORKER_URL}/tile/${tileX}/${tileY}`, { signal: AbortSignal.timeout(15000) });
+    // Append a unique timestamp to bypass Cloudflare's edge cache!
+    const cacheBuster = Date.now();
+    const url = `${WORKER_URL}/tile/${tileX}/${tileY}?t=${cacheBuster}`;
+    
+    const res = await fetch(url, { 
+      // Also strictly instruct Node's internal fetch not to cache
+      cache: 'no-store', 
+      signal: AbortSignal.timeout(15000) 
+    });
+    
     if (res.ok) return await res.json();
   } catch (err) {
     log(`Failed to fetch cache for sector (${tileX}, ${tileY}): ${err.message}`, 'warn');
@@ -63,7 +72,10 @@ async function syncBackendTile(tileX, tileY, batchMap) {
   try {
     const res = await fetch(`${WORKER_URL}/tile/${tileX}/${tileY}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
       body: JSON.stringify(batchMap),
       signal: AbortSignal.timeout(20000)
     });
@@ -157,6 +169,7 @@ async function run() {
 
     let targetInterval = CFG_TARGET_INTERVAL, minFloor = CFG_MIN_FLOOR;
     let consecutiveSuccesses = 0, scannedThisCycle = 0;
+    let consecutiveSkips = 0;
     let discoveriesToFlush = {};
 
     const flushToD1 = async () => {
@@ -168,7 +181,16 @@ async function run() {
           flushCount += keysCount;
         }
       }
-      if (flushCount > 0) log(`Flushed ${flushCount} pixels to D1.`, 'success');
+      
+      if (flushCount > 0) {
+        log(`Flushed ${flushCount} pixels to D1. Pulling latest cloud state...`, 'success');
+        
+        // Mid-scan cache update: Fetch all intersecting tiles to catch userscript discoveries
+        for (const { tx, ty } of intersectingTiles) {
+            const updatedData = await fetchBackendTile(tx, ty);
+            cloudCache.set(`${tx}_${ty}`, updatedData);
+        }
+      }
       discoveriesToFlush = {}; // Reset queue after flush
     };
 
@@ -185,6 +207,20 @@ async function run() {
 
       const { tileX, tileY, pixelX, pixelY, currentColor } = task;
       const sectorKey = `${tileX}_${tileY}`;
+
+      // MID-SCAN CHECK: Did another bot/user discover this since the cycle started?
+      const liveCache = cloudCache.get(sectorKey)?.[`${pixelX}_${pixelY}`];
+      if (liveCache && liveCache.c !== null && liveCache.c === currentColor) {
+          // Skip the Wplace API call entirely!
+          scannedThisCycle++;
+          consecutiveSkips++;
+          continue; 
+      } else if (consecutiveSkips > 0) {
+        consecutiveSkips = 0;
+        log(`Skipped ${consecutiveSkips} pixels - already discovered by another bot/user!`);
+        continue;
+      }
+
       let resolved = false;
 
       while (!resolved && !isShuttingDown) {

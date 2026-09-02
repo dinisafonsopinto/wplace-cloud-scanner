@@ -3,7 +3,7 @@ name: Wplace Background Scanner
 on:
   schedule:
     # Runs at minute 42 every 2 hours UTC
-    - cron: '42 */2 * * *'
+    - cron: '42 */4 * * *'
 
   workflow_dispatch:
     inputs:
@@ -24,39 +24,49 @@ on:
         required: false
         type: string
       run_duration_mins:
-        description: 'Run duration mins (Default: 25)'
+        description: 'Run duration mins'
         required: false
         default: '100'
         type: string
       target_interval:
-        description: 'Target Interval ms (Default: 500)'
+        description: 'Target Interval (ms)'
         required: false
         default: '500'
         type: string
       min_floor:
-        description: 'Min Floor ms (Default: 399)'
+        description: 'Min Floor (ms)'
         required: false
         default: '399'
         type: string
       pause_sec_429:
-        description: '429 Pause sec (Default: 321)'
+        description: '429 Pause (s)'
         required: false
         default: '321'
         type: string
       penalty_ms_429:
-        description: '429 Penalty +ms (Default: 500)'
+        description: '429 Penalty (+ms)'
         required: false
         default: '500'
         type: string
       step_down_ms:
-        description: 'Speed Step -ms (Default: 21)'
+        description: 'Speed Step (-ms)'
         required: false
         default: '21'
         type: string
       streak_reqs:
-        description: 'Streak for Step (Default: 42)'
+        description: 'Streak for Step'
         required: false
         default: '42'
+        type: string
+      total_cycles:
+        description: 'Amount of Cycles'
+        required: false
+        default: '1'
+        type: string
+      pause_interval_secs:
+        description: 'Pause between Cycles (s)'
+        required: false
+        default: '30'
         type: string
 
 jobs:
@@ -76,18 +86,21 @@ jobs:
 
       - name: Execute Scanner
         env:
+          # variables without hardcoded defaults
           WORKER_URL: ${{ secrets.WORKER_URL }}
           START_X: ${{ inputs.start_x != '' && inputs.start_x || vars.TARGET_START_X }}
           START_Y: ${{ inputs.start_y != '' && inputs.start_y || vars.TARGET_START_Y }}
           END_X: ${{ inputs.end_x != '' && inputs.end_x || vars.TARGET_END_X }}
           END_Y: ${{ inputs.end_y != '' && inputs.end_y || vars.TARGET_END_Y }}
-          RUN_DURATION_MINS: ${{ inputs.run_duration_mins != '' && inputs.run_duration_mins || vars.RUN_DURATION_MINS }}
-          PAUSE_INTERVAL_MINS: '0'
-          TOTAL_CYCLES: '1'
-          TARGET_INTERVAL: ${{ inputs.target_interval != '' && inputs.target_interval || '500' }}
-          MIN_FLOOR: ${{ inputs.min_floor != '' && inputs.min_floor || '399' }}
-          PAUSE_SEC_429: ${{ inputs.pause_sec_429 != '' && inputs.pause_sec_429 || '321' }}
-          PENALTY_MS_429: ${{ inputs.penalty_ms_429 != '' && inputs.penalty_ms_429 || '500' }}
-          STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || '21' }}
-          STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || '42' }}
+          # variables with hardcoded defaults
+          RUN_DURATION_MINS: ${{ inputs.run_duration_mins != '' && inputs.run_duration_mins || vars.RUN_DURATION_MINS || '67'}}
+          PAUSE_INTERVAL_SECS: ${{ inputs.pause_interval_secs != '' && inputs.pause_interval_secs || vars.PAUSE_INTERVAL_SECS || '3' }}
+          TOTAL_CYCLES: ${{ inputs.total_cycles != '' && inputs.total_cycles || vars.TOTAL_CYCLES || '1' }}
+          TARGET_INTERVAL: ${{ inputs.target_interval != '' && inputs.target_interval || vars.TARGET_INTERVAL || '500' }}
+          MIN_FLOOR: ${{ inputs.min_floor != '' && inputs.min_floor || vars.MIN_FLOOR || '399' }}
+          PAUSE_SEC_429: ${{ inputs.pause_sec_429 != '' && inputs.pause_sec_429 || vars.PAUSE_SEC_429 || '321' }}
+          PENALTY_MS_429: ${{ inputs.penalty_ms_429 != '' && inputs.penalty_ms_429 || vars.PENALTY_MS_429 || '500' }}
+          STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || vars.STEP_DOWN_MS || '21' }}
+          STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || vars.STREAK_REQS || '42' }}
+          FLUSH_INTERVAL: ${{ vars.FLUSH_INTERVAL || '1000' }}
         run: node bot.js
