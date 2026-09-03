@@ -84,30 +84,50 @@ async function fetchBackendTile(tileX, tileY) {
 
 async function syncBackendTile(tileX, tileY, batchMap, signal = null) {
   if (Object.keys(batchMap).length === 0) return true;
-  try {
-    const res = await fetch(`${WORKER_URL}/tile/${tileX}/${tileY}`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(batchMap),
-      // Callers pass their own signal. Normal flushes get the shutdown-aware
-      // signal so they abort promptly on cancel; the final shutdown flush
-      // passes an independent timeout instead (see run()), since by the time
-      // it runs shutdownController.signal is already aborted and would make
-      // this fetch fail instantly.
-      signal: signal ?? AbortSignal.any([AbortSignal.timeout(20000), shutdownController.signal]),
-    });
-    if (!res.ok) {
-      log(`Failed to sync sector (${tileX}, ${tileY}): HTTP ${res.status}`, 'warn');
-      return false;
-    }
-    return true;
-  } catch (err) {
-    log(`Error syncing sector (${tileX}, ${tileY}): ${err.message}`, 'warn');
-    return false;
+
+  const subSectors = {};
+  
+  // Group the pending pixels into 100x100 chunks
+  for (const [key, record] of Object.entries(batchMap)) {
+    const [px, py] = key.split('_').map(Number);
+    const subKey = `${Math.floor(px / 100)}_${Math.floor(py / 100)}`;
+    
+    if (!subSectors[subKey]) subSectors[subKey] = {};
+    subSectors[subKey][key] = record;
   }
+
+  let allSuccessful = true;
+
+  // Send chunks sequentially to prevent Worker HTTP/Memory limits
+  for (const [subKey, chunkData] of Object.entries(subSectors)) {
+    try {
+      const res = await fetch(`${WORKER_URL}/tile/${tileX}/${tileY}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(chunkData),
+        signal: signal ?? AbortSignal.any([AbortSignal.timeout(20000), shutdownController.signal]),
+      });
+      
+      if (!res.ok) {
+        log(`Failed to sync chunk ${subKey} for sector (${tileX}, ${tileY}): HTTP ${res.status}`, 'warn');
+        allSuccessful = false;
+      }
+    } catch (err) {
+      log(`Error syncing chunk ${subKey} for sector (${tileX}, ${tileY}): ${err.message}`, 'warn');
+      allSuccessful = false;
+    }
+
+    // Give D1 time to process between chunks, respecting the abort signal
+    await wait(250, signal);
+  }
+
+  // If a chunk fails, returning false keeps the whole sector in the flush queue.
+  // Resending successful chunks alongside failed ones on the next loop is safe 
+  // because the SQLite json_patch merge is idempotent.
+  return allSuccessful;
 }
 
 async function fetchTileImageData(tileX, tileY) {
