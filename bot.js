@@ -24,6 +24,9 @@ const CFG_STEP_DOWN_MS = parseEnvInt(process.env.STEP_DOWN_MS, 21);
 const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
 const FLUSH_INTERVAL = parseEnvInt(process.env.FLUSH_INTERVAL, 1000); // Auto-save every 200 pixels
 
+const EXPANSION_ALGORITHM = process.env.EXPANSION_ALGORITHM === 'true';
+const LIMIT_EXPANSION = process.env.LIMIT_EXPANSION === 'true'; // limits the expansion to the tiles already affected by the scan
+
 const TILE_SIZE = 1000;
 const LOG_INTERVAL = 200; // Log every 200 pixels
 
@@ -153,6 +156,62 @@ async function run() {
   const minY = Math.min(START_Y, END_Y);
   const maxY = Math.max(START_Y, END_Y);
   const totalPixels = (maxX - minX + 1) * (maxY - minY + 1);
+  const runStartTime = Date.now();
+
+  // --- EXPANSION ALGORITHM SETUP ---
+  const visitedPixels = new Set();
+  const expansionQueue = [];
+
+  async function checkNeighbors(px, py, tileDataMap, cacheMap) {
+    const neighbors = [
+      { nx: px, ny: py - 1 }, { nx: px, ny: py + 1 }, // Up, Down
+      { nx: px - 1, ny: py }, { nx: px + 1, ny: py }  // Left, Right
+    ];
+    
+    for (const { nx, ny } of neighbors) {
+      const key = `${nx}_${ny}`;
+      if (visitedPixels.has(key)) continue;
+      
+      // Skip if point is inside the primary bounding box (already handled by pendingTasks)
+      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) continue;
+      
+      const coords = getCoords(nx, ny);
+      const tileKey = `${coords.tileX}_${coords.tileY}`;
+      
+      // Handle LIMIT_EXPANSION logic
+      if (!tileDataMap.has(tileKey)) {
+        if (LIMIT_EXPANSION) continue; // Stop at pre-loaded tile boundaries
+        
+        // Dynamically load the new tile mapping if allowed
+        try {
+          log(`Dynamically loading expanded tile (${coords.tileX}, ${coords.tileY})...`);
+          const [newCache, newPng] = await Promise.all([
+            fetchBackendTile(coords.tileX, coords.tileY),
+            fetchTileImageData(coords.tileX, coords.tileY)
+          ]);
+          cacheMap.set(tileKey, newCache);
+          tileDataMap.set(tileKey, newPng);
+        } catch (err) {
+          log(`Failed to dynamically fetch tile ${tileKey}: ${err.message}`, 'warn');
+          continue;
+        }
+      }
+
+      const png = tileDataMap.get(tileKey);
+      const neighborColor = getTilePixelColor(png, coords.pixelX, coords.pixelY);
+
+      // Stop expanding if the pixel is empty/transparent (-1)
+      if (neighborColor === -1) continue;
+
+      visitedPixels.add(key);
+      expansionQueue.push({
+        x: nx, y: ny,
+        tileX: coords.tileX, tileY: coords.tileY,
+        pixelX: coords.pixelX, pixelY: coords.pixelY,
+        currentColor: neighborColor // FIX: Pass the color down!
+      });
+    }
+  }
 
   log(`Target Coordinates: [${minX}, ${minY}] to [${maxX}, ${maxY}] (${totalPixels} total pixels)`);
   log(`Execution Plan: ${TOTAL_CYCLES} cycle(s), max ${CYCLE_DURATION_MS / 60000}m run per cycle (${RUN_DURATION_MS / 60000}m total)`);
@@ -163,7 +222,7 @@ async function run() {
   log(`429 pause: ${CFG_PAUSE_SEC_429} seconds`);
   log(`Step down: ${CFG_STEP_DOWN_MS}ms`);
   log(`Streak reqs: ${CFG_STREAK_REQS}`);
-  log(`Flush interval: ${FLUSH_INTERVAL}ms`);
+  log(`Flush interval: ${FLUSH_INTERVAL} pixels`);
 
   for (let cycle = 1; cycle <= TOTAL_CYCLES; cycle++) {
     if (isShuttingDown) break;
@@ -215,7 +274,7 @@ async function run() {
 
     let lastRequestStart = null;
 
-    const flushToD1 = async ({ signal = null } = {}) => {
+    const flushToD1 = async ({ signal = null } = {}, biderctional = true) => {
       let flushCount = 0;
       const remaining = {}; // sectors that failed to sync stay queued for the next flush
 
@@ -236,7 +295,7 @@ async function run() {
         // Mid-scan cache update: Fetch all intersecting tiles to catch userscript discoveries.
         // Skip this during shutdown — it's not needed before exit and eats into the ~10s
         // grace period GitHub Actions gives the process to terminate after cancellation.
-        if (!isShuttingDown) {
+        if (!isShuttingDown && biderctional) {
           log(`Pulling latest cloud state...`);
           for (const { tx, ty } of intersectingTiles) {
               const updatedData = await fetchBackendTile(tx, ty);
@@ -250,8 +309,11 @@ async function run() {
       discoveriesToFlush = remaining; // only clear sectors that actually synced
     };
 
+    let taskIndex = 0;
+    let expansionIndex = 0;
+
     // Main Scanning Loop
-    for (const task of pendingTasks) {
+    while ((taskIndex < pendingTasks.length || (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length)) && !isShuttingDown) {
       if (isShuttingDown) {
         log(`Manual cancellation detected! Halting loop...`, 'warn');
         break; 
@@ -260,21 +322,35 @@ async function run() {
         log(`Time window of ${CYCLE_DURATION_MS / 60000}m reached. Stopping cycle...`, 'warn');
         break;
       }
+      // Global check to ensure any delays don't affect the job duration
+      if (Date.now() - runStartTime >= RUN_DURATION_MS) {
+        log(`Time window of ${CYCLE_DURATION_MS / 60000}m reached. Stopping cycle...`, 'warn');
+        break;
+      }
 
-      const { tileX, tileY, pixelX, pixelY, currentColor } = task;
+      let task, isExpansionTask = false;
+    
+      if (taskIndex < pendingTasks.length) {
+        task = pendingTasks[taskIndex++];
+      } else {
+        task = expansionQueue[expansionIndex++];
+        isExpansionTask = true;
+      }
+
+      const { x, y, tileX, tileY, pixelX, pixelY, currentColor } = task;
       const sectorKey = `${tileX}_${tileY}`;
 
-      // MID-SCAN CHECK: Did another bot/user discover this since the cycle started?
+      // MID-SCAN CHECK
       const liveCache = cloudCache.get(sectorKey)?.[`${pixelX}_${pixelY}`];
       if (liveCache && liveCache.c !== null && liveCache.c === currentColor) {
-          // Skip the Wplace API call entirely!
-          scannedThisCycle++;
-          consecutiveSkips++;
-          continue; 
+        scannedThisCycle++;
+        consecutiveSkips++;
+
+        if (EXPANSION_ALGORITHM) await checkNeighbors(x, y, pngMap, cloudCache);
+        continue; 
       } else if (consecutiveSkips > 0) {
         log(`Skipped ${consecutiveSkips} pixels - already discovered by another bot/user!`);
         consecutiveSkips = 0;
-        continue;
       }
 
       let resolved = false;
@@ -297,6 +373,8 @@ async function run() {
 
           if (!discoveriesToFlush[sectorKey]) discoveriesToFlush[sectorKey] = { tx: tileX, ty: tileY, data: {} };
           discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = { u: res.username, c: currentColor };
+
+          if (EXPANSION_ALGORITHM) await checkNeighbors(x, y, pngMap, cloudCache);
 
           if (CFG_STEP_DOWN_MS > 0 && consecutiveSuccesses >= CFG_STREAK_REQS && targetInterval > minFloor) {
             targetInterval = Math.max(minFloor, targetInterval - CFG_STEP_DOWN_MS);
@@ -340,6 +418,7 @@ async function run() {
         } else if (res.status === 408) {
           log(`Connection Timeout. Retrying in 30s...`, 'warn');
           await wait(30000, shutdownController.signal);
+          log(`Retrying...`);
         } else {
           log(`HTTP ${res.status || 'Network Error'}. Retrying in 30s...`, 'error');
           await wait(30000, shutdownController.signal);
@@ -352,7 +431,7 @@ async function run() {
     // already aborted by now, so we give this call its own short-lived
     // timeout instead — otherwise the "emergency" flush would fail instantly
     // and every unsaved pixel from this cycle would be lost.
-    await flushToD1(isShuttingDown ? { signal: AbortSignal.timeout(6000) } : {});
+    await flushToD1(isShuttingDown ? { signal: AbortSignal.timeout(6000) } : {}, false);
 
     if (cycle < TOTAL_CYCLES && !isShuttingDown) {
       log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);

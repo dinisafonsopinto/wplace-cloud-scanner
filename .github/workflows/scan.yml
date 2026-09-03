@@ -59,6 +59,14 @@ on:
         description: 'Pause between Cycles (s)'
         required: false
         type: string
+      expansion_algorithm:
+        description: 'Use expansion algortihm?'
+        required: false
+        type: boolean
+      limit_expansion:
+        description: 'Limit expansion to affected tiles?'
+        required: false
+        type: boolean
 
 jobs:
   scan:
@@ -94,4 +102,6 @@ jobs:
           STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || vars.STEP_DOWN_MS || '21' }}
           STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || vars.STREAK_REQS || '42' }}
           FLUSH_INTERVAL: ${{ vars.FLUSH_INTERVAL || '1000' }}
+          EXPANSION_ALGORITHM: ${{ inputs.expansion_algorithm != '' && inputs.expansion_algorithm || vars.EXPANSION_ALGORITHM || 'true' }}
+          LIMIT_EXPANSION: ${{ inputs.limit_expansion != '' && inputs.limit_expansion || vars.LIMIT_EXPANSION || 'true' }}
         run: exec node bot.js
