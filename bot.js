@@ -223,6 +223,8 @@ async function run() {
   log(`Step down: ${CFG_STEP_DOWN_MS}ms`);
   log(`Streak reqs: ${CFG_STREAK_REQS}`);
   log(`Flush interval: ${FLUSH_INTERVAL} pixels`);
+  log(`Expansion algorithm: ${EXPANSION_ALGORITHM}`);
+  log(`Limit expansion: ${LIMIT_EXPANSION}`);
 
   for (let cycle = 1; cycle <= TOTAL_CYCLES; cycle++) {
     if (isShuttingDown) break;
