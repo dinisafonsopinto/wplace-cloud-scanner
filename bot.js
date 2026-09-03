@@ -226,6 +226,8 @@ async function run() {
   log(`Expansion algorithm: ${EXPANSION_ALGORITHM}`);
   log(`Limit expansion: ${LIMIT_EXPANSION}`);
 
+  let minFloor = CFG_MIN_FLOOR; // don't forget learnt minimum floors
+
   for (let cycle = 1; cycle <= TOTAL_CYCLES; cycle++) {
     if (isShuttingDown) break;
     log(`================== STARTING CYCLE ${cycle}/${TOTAL_CYCLES} ==================`);
@@ -269,7 +271,7 @@ async function run() {
     log(`Diff Summary: ${instantMatches} static pixels resolved. ${pendingTasks.length} pending queries.`, 'success');
     if (pendingTasks.length === 0) break;
 
-    let targetInterval = CFG_TARGET_INTERVAL, minFloor = CFG_MIN_FLOOR;
+    let targetInterval = CFG_TARGET_INTERVAL;
     let consecutiveSuccesses = 0, scannedThisCycle = 0;
     let consecutiveSkips = 0;
     let discoveriesToFlush = {};
@@ -416,9 +418,14 @@ async function run() {
           minFloor = Math.max(minFloor, targetInterval + Math.max(10, CFG_STEP_DOWN_MS));
           targetInterval += CFG_PENALTY_MS_429;
           log(`Rate limited! Learned floor: ${minFloor}ms. Pausing for ${CFG_PAUSE_SEC_429}s...`, 'warn');
+          flushToD1();
           await wait(CFG_PAUSE_SEC_429 * 1000, shutdownController.signal);
         } else if (res.status === 408) {
           log(`Connection Timeout. Retrying in 30s...`, 'warn');
+          if (discoveriesToFlush.length > 0.25 * FLUSH_INTERVAL) {
+            log(`Too many unsaved pixels (${discoveriesToFlush.length}). Flushing...`);
+            flushToD1();
+          }
           await wait(30000, shutdownController.signal);
           log(`Retrying...`);
         } else {

@@ -61,11 +61,11 @@ on:
         type: string
       expansion_algorithm:
         description: 'Use expansion algortihm?'
-        required: false
+        required: true
         type: boolean
       limit_expansion:
         description: 'Limit expansion to affected tiles?'
-        required: false
+        required: true
         type: boolean
 
 jobs:
@@ -91,6 +91,8 @@ jobs:
           START_Y: ${{ inputs.start_y != '' && inputs.start_y || vars.TARGET_START_Y }}
           END_X: ${{ inputs.end_x != '' && inputs.end_x || vars.TARGET_END_X }}
           END_Y: ${{ inputs.end_y != '' && inputs.end_y || vars.TARGET_END_Y }}
+          EXPANSION_ALGORITHM: ${{ inputs.expansion_algorithm != '' && inputs.expansion_algorithm || vars.EXPANSION_ALGORITHM }}
+          LIMIT_EXPANSION: ${{ inputs.limit_expansion != '' && inputs.limit_expansion || vars.LIMIT_EXPANSION }}
           # variables with hardcoded defaults
           RUN_DURATION_MINS: ${{ inputs.run_duration_mins != '' && inputs.run_duration_mins || vars.RUN_DURATION_MINS || '67'}}
           PAUSE_INTERVAL_SECS: ${{ inputs.pause_interval_secs != '' && inputs.pause_interval_secs || vars.PAUSE_INTERVAL_SECS || '3' }}
@@ -102,6 +104,4 @@ jobs:
           STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || vars.STEP_DOWN_MS || '21' }}
           STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || vars.STREAK_REQS || '42' }}
           FLUSH_INTERVAL: ${{ vars.FLUSH_INTERVAL || '1000' }}
-          EXPANSION_ALGORITHM: ${{ inputs.expansion_algorithm != '' && inputs.expansion_algorithm || vars.EXPANSION_ALGORITHM || 'true' }}
-          LIMIT_EXPANSION: ${{ inputs.limit_expansion != '' && inputs.limit_expansion || vars.LIMIT_EXPANSION || 'true' }}
         run: exec node bot.js
