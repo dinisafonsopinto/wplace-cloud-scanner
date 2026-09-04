@@ -429,6 +429,8 @@ async function run() {
         const res = await fetchPixelOfficial(tileX, tileY, pixelX, pixelY);
         const duration = Date.now() - reqStart;
 
+        if (isShuttingDown) break; // might get aborted while fetching the pixel
+
         if (res.success) {
           scannedThisCycle++;
           consecutiveSuccesses++;
@@ -486,7 +488,7 @@ async function run() {
           );
 
           if (unsavedCount > 0.25 * FLUSH_INTERVAL) {
-            log(`Too many unsaved pixels (${discoveriesToFlush.length}). Flushing...`);
+            log(`Too many unsaved pixels (${unsavedCount}). Flushing...`);
             await flushToD1();
           }
           await wait(30000, shutdownController.signal);
