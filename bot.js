@@ -206,7 +206,7 @@ async function run() {
       if (visitedPixels.has(key)) continue;
       
       let offLimits = true;
-      // Skip if point is inside the primary bounding box (already handled by pendingTasks)
+
       if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) offLimits = false;
 
       if (offLimits && LIMIT_EXPANSION) {
@@ -240,6 +240,9 @@ async function run() {
 
       // Stop expanding if the pixel is empty/transparent (-1)
       if (neighborColor === -1) continue;
+
+      const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
+      if (cachedPixel && cachedPixel.c === neighborColor) continue;
 
       visitedPixels.add(key);
       if (offLimits) {
