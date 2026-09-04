@@ -67,6 +67,10 @@ on:
         description: 'Limit expansion to affected tiles?'
         required: true
         type: boolean
+      expansion_rate:
+        description: 'If there are too many queue pixels, how often do you want to expand during the normal scan?'
+        required: false
+        type: string
 
 jobs:
   scan:
@@ -104,4 +108,5 @@ jobs:
           STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || vars.STEP_DOWN_MS || '21' }}
           STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || vars.STREAK_REQS || '42' }}
           FLUSH_INTERVAL: ${{ vars.FLUSH_INTERVAL || '1000' }}
+          EXPANSION_RATE: ${{ inputs.expansion_rate != '' && inputs.expansion_rate || vars.EXPANSION_RATE || '1' }}
         run: exec node bot.js

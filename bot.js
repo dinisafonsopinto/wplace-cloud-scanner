@@ -181,19 +181,36 @@ async function run() {
   // --- EXPANSION ALGORITHM SETUP ---
   const visitedPixels = new Set();
   const expansionQueue = [];
+  const expansionQueueOutsideOfLimits = [];
 
   async function checkNeighbors(px, py, tileDataMap, cacheMap) {
     const neighbors = [
-      { nx: px, ny: py - 1 }, { nx: px, ny: py + 1 }, // Up, Down
-      { nx: px - 1, ny: py }, { nx: px + 1, ny: py }  // Left, Right
-    ];
+      { nx: px, ny: py - 1 }, // Up
+      { nx: px, ny: py + 1 }, // Down
+      { nx: px - 1, ny: py }, // Left
+      { nx: px + 1, ny: py }, // Right
+      { nx: px - 1, ny: py - 1 }, // Up-Left
+      { nx: px + 1, ny: py - 1 }, // Up-Right
+      { nx: px - 1, ny: py + 1 }, // Down-Left
+      { nx: px + 1, ny: py + 1 }, // Down-Right
+      // tolerance
+      { nx: px - 3, ny: py }, // Left-Left
+      { nx: px + 3, ny: py }, // Right-Right
+      { nx: px, ny: py - 3 }, // Up-Up
+      { nx: px, ny: py + 3 }, // Down-Down
+  ];
     
     for (const { nx, ny } of neighbors) {
       const key = `${nx}_${ny}`;
       if (visitedPixels.has(key)) continue;
       
+      let offLimits = false;
       // Skip if point is inside the primary bounding box (already handled by pendingTasks)
-      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) continue;
+      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) offLimits = true;
+
+      if (offLimits && LIMIT_EXPANSION) {
+        continue;
+      }
       
       const coords = getCoords(nx, ny);
       const tileKey = `${coords.tileX}_${coords.tileY}`;
@@ -224,12 +241,21 @@ async function run() {
       if (neighborColor === -1) continue;
 
       visitedPixels.add(key);
-      expansionQueue.push({
-        x: nx, y: ny,
-        tileX: coords.tileX, tileY: coords.tileY,
-        pixelX: coords.pixelX, pixelY: coords.pixelY,
-        currentColor: neighborColor // FIX: Pass the color down!
-      });
+      if (offLimits) {
+        expansionQueueOutsideOfLimits.push({
+          x: nx, y: ny,
+          tileX: coords.tileX, tileY: coords.tileY,
+          pixelX: coords.pixelX, pixelY: coords.pixelY,
+          currentColor: neighborColor // FIX: Pass the color down!
+        });
+      } else {
+        expansionQueue.push({
+          x: nx, y: ny,
+          tileX: coords.tileX, tileY: coords.tileY,
+          pixelX: coords.pixelX, pixelY: coords.pixelY,
+          currentColor: neighborColor // FIX: Pass the color down!
+        });
+      }
     }
   }
 
@@ -335,30 +361,41 @@ async function run() {
 
     let taskIndex = 0;
     let expansionIndex = 0;
+    let expansionIndexOutsideOfLimits = 0;
 
     // Main Scanning Loop
-    while ((taskIndex < pendingTasks.length || (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length)) && !isShuttingDown) {
+    while (
+        (taskIndex < pendingTasks.length
+          || (EXPANSION_ALGORITHM && (expansionIndex < expansionQueue.length || expansionIndexOutsideOfLimits < expansionQueueOutsideOfLimits.length)))
+        && !isShuttingDown
+    ) {
+      const dateNow = Date.now();
       if (isShuttingDown) {
         log(`Manual cancellation detected! Halting loop...`, 'warn');
         break; 
       }
-      if (Date.now() - cycleStartTime >= CYCLE_DURATION_MS) {
+      if (dateNow - cycleStartTime >= CYCLE_DURATION_MS) {
         log(`Time window of ${CYCLE_DURATION_MS / 60000}m reached. Stopping cycle...`, 'warn');
         break;
       }
       // Global check to ensure any delays don't affect the job duration
-      if (Date.now() - runStartTime >= RUN_DURATION_MS) {
+      if (dateNow - runStartTime >= RUN_DURATION_MS) {
         log(`Time window of ${CYCLE_DURATION_MS / 60000}m reached. Stopping cycle...`, 'warn');
         break;
       }
 
-      let task, isExpansionTask = false;
+      let task;
     
       if (taskIndex < pendingTasks.length) {
-        task = pendingTasks[taskIndex++];
-      } else {
+        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length &&dateNow % 5 !== 0) { // one in 5 chance of doing expansion anyway
+            task = expansionQueue[expansionIndex++];
+        } else {
+          task = pendingTasks[taskIndex++];
+        }
+      } else if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length) {
         task = expansionQueue[expansionIndex++];
-        isExpansionTask = true;
+      } else if (EXPANSION_ALGORITHM && expansionIndexOutsideOfLimits < expansionQueueOutsideOfLimits.length) {
+        task = expansionQueueOutsideOfLimits[expansionIndexOutsideOfLimits++];
       }
 
       const { x, y, tileX, tileY, pixelX, pixelY, currentColor } = task;
@@ -438,13 +475,18 @@ async function run() {
           minFloor = Math.max(minFloor, targetInterval + Math.max(10, CFG_STEP_DOWN_MS));
           targetInterval += CFG_PENALTY_MS_429;
           log(`Rate limited! Learned floor: ${minFloor}ms. Pausing for ${CFG_PAUSE_SEC_429}s...`, 'warn');
-          flushToD1();
+          await flushToD1();
           await wait(CFG_PAUSE_SEC_429 * 1000, shutdownController.signal);
         } else if (res.status === 408) {
           log(`Connection Timeout. Retrying in 30s...`, 'warn');
-          if (discoveriesToFlush.length > 0.25 * FLUSH_INTERVAL) {
+          
+          const unsavedCount = Object.values(discoveriesToFlush).reduce(
+            (acc, sector) => acc + Object.keys(sector.data).length, 0
+          );
+
+          if (unsavedCount > 0.25 * FLUSH_INTERVAL) {
             log(`Too many unsaved pixels (${discoveriesToFlush.length}). Flushing...`);
-            flushToD1();
+            await flushToD1();
           }
           await wait(30000, shutdownController.signal);
           log(`Retrying...`);
