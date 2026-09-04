@@ -68,7 +68,7 @@ on:
         required: true
         type: boolean
       expansion_rate:
-        description: 'If there are too many queue pixels, how often do you want to expand during the normal scan?'
+        description: 'If there are too many queue pixels, how often do you want to expand during the normal scan? (0 for none, 1 for always, otherwise every n pixels)'
         required: false
         type: string
 

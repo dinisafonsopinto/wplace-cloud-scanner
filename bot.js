@@ -275,6 +275,8 @@ async function run() {
   log(`Flush interval: ${FLUSH_INTERVAL} pixels`);
   log(`Expansion algorithm: ${EXPANSION_ALGORITHM}`);
   log(`Limit expansion: ${LIMIT_EXPANSION}`);
+  log(`Expansion rate: ${EXPANSION_RATE}`);
+  log('\n');
 
   let minFloor = CFG_MIN_FLOOR; // don't forget learnt minimum floors
 
@@ -391,7 +393,7 @@ async function run() {
       let task;
     
       if (taskIndex < pendingTasks.length) {
-        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length &&dateNow % EXPANSION_RATE !== 0) { // one in 5 chance of doing expansion anyway
+        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length && dateNow % EXPANSION_RATE !== 0) {
             task = expansionQueue[expansionIndex++];
         } else {
           task = pendingTasks[taskIndex++];
@@ -498,6 +500,7 @@ async function run() {
           log(`Retrying...`);
         } else {
           log(`HTTP ${res.status || 'Network Error'}. Retrying in 30s...`, 'error');
+          targetInterval += Math.ceil(CFG_STEP_DOWN_MS * consecutiveSuccesses / CFG_STREAK_REQS);
           await wait(30000, shutdownController.signal);
         }
       }
