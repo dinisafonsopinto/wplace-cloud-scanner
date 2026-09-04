@@ -393,7 +393,7 @@ async function run() {
       let task;
     
       if (taskIndex < pendingTasks.length) {
-        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length && dateNow % EXPANSION_RATE !== 0) {
+        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length && dateNow % EXPANSION_RATE === 0) {
             task = expansionQueue[expansionIndex++];
         } else {
           task = pendingTasks[taskIndex++];
