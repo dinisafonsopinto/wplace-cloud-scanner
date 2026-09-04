@@ -467,11 +467,13 @@ async function run() {
               : `${actualCadence}ms`;
 
             log(
-              `[Progress] Scanned ${scannedThisCycle}/${pendingTasks.length} pixels | ` +
-              `cadence: ${targetInterval}ms (actual: ${actualCadenceText}) | ` +
-              `request: ${duration}ms | ` +
-              `cycle time left: ${cycleTimeRemainingMins}m | ` +
-              `total time left: ${timeRemainingMins}m`
+              `[Progress]\n` +
+              `  ├─ Pixels: ${scannedThisCycle}/${pendingTasks.length}\n` +
+              `  ├─ Cadence: ${targetInterval}ms (actual: ${actualCadenceText})\n` +
+              `  ├─ Request: ${duration}ms\n` +
+              `  ├─ Cycle time left: ${cycleTimeRemainingMins}m\n` +
+              `  ├─ Total time left: ${timeRemainingMins}m\n` + 
+              `  └─ Last scanned pixel: (${x}, ${y}), tile (${tileX}, ${tileY})\n`
             );
           }
 
