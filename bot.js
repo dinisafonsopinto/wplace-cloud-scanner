@@ -195,19 +195,19 @@ async function run() {
       { nx: px - 1, ny: py + 1 }, // Down-Left
       { nx: px + 1, ny: py + 1 }, // Down-Right
       // tolerance
-      { nx: px - 3, ny: py }, // Left-Left
-      { nx: px + 3, ny: py }, // Right-Right
-      { nx: px, ny: py - 3 }, // Up-Up
-      { nx: px, ny: py + 3 }, // Down-Down
+      { nx: px - 5, ny: py }, // Left-Left
+      { nx: px + 5, ny: py }, // Right-Right
+      { nx: px, ny: py - 5 }, // Up-Up
+      { nx: px, ny: py + 5 }, // Down-Down
   ];
     
     for (const { nx, ny } of neighbors) {
       const key = `${nx}_${ny}`;
       if (visitedPixels.has(key)) continue;
       
-      let offLimits = false;
+      let offLimits = true;
       // Skip if point is inside the primary bounding box (already handled by pendingTasks)
-      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) offLimits = true;
+      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) offLimits = false;
 
       if (offLimits && LIMIT_EXPANSION) {
         continue;
@@ -443,7 +443,7 @@ async function run() {
           if (CFG_STEP_DOWN_MS > 0 && consecutiveSuccesses >= CFG_STREAK_REQS && targetInterval > minFloor) {
             targetInterval = Math.max(minFloor, targetInterval - CFG_STEP_DOWN_MS);
             consecutiveSuccesses = 0;
-            log(`Speed step triggered! New target: ${targetInterval}ms (Floor: ${minFloor}ms)`);
+            log(`Speed step triggered (${CFG_STREAK_REQS})! New target: ${targetInterval}ms (Floor: ${minFloor}ms)`);
           }
 
           resolved = true;
@@ -456,7 +456,7 @@ async function run() {
 
           if (scannedThisCycle % LOG_INTERVAL === 0) {
             const cycleTimeRemainingMins = ((CYCLE_DURATION_MS - (Date.now() - cycleStartTime)) / 60000).toFixed(1);
-            const timeRemainingMins = ((RUN_DURATION_MS - (Date.now() - cycleStartTime)) / 60000).toFixed(1);
+            const timeRemainingMins = ((RUN_DURATION_MS - (Date.now() - runStartTime)) / 60000).toFixed(1);
             const actualCadenceText = actualCadence === null
               ? 'N/A'
               : `${actualCadence}ms`;
@@ -477,7 +477,7 @@ async function run() {
           consecutiveSuccesses = 0;
           minFloor = Math.max(minFloor, targetInterval + Math.max(10, CFG_STEP_DOWN_MS));
           targetInterval += CFG_PENALTY_MS_429;
-          log(`Rate limited! Learned floor: ${minFloor}ms. Pausing for ${CFG_PAUSE_SEC_429}s...`, 'warn');
+          log(`Rate limited! Learned floor: ${minFloor}ms. New target: ${targetInterval}ms. Pausing for ${CFG_PAUSE_SEC_429}s...`, 'warn');
           await flushToD1();
           await wait(CFG_PAUSE_SEC_429 * 1000, shutdownController.signal);
         } else if (res.status === 408) {
