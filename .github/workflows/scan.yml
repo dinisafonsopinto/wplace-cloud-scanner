@@ -108,5 +108,5 @@ jobs:
           STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || vars.STEP_DOWN_MS || '21' }}
           STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || vars.STREAK_REQS || '42' }}
           FLUSH_INTERVAL: ${{ vars.FLUSH_INTERVAL || '1000' }}
-          EXPANSION_RATE: ${{ inputs.expansion_rate != '' && inputs.expansion_rate || vars.EXPANSION_RATE || '1' }}
+          EXPANSION_RATE: ${{ inputs.expansion_rate != '' && inputs.expansion_rate || vars.EXPANSION_RATE || '10' }}
         run: exec node bot.js

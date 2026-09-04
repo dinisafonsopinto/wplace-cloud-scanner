@@ -26,6 +26,7 @@ const FLUSH_INTERVAL = parseEnvInt(process.env.FLUSH_INTERVAL, 1000); // Auto-sa
 
 const EXPANSION_ALGORITHM = process.env.EXPANSION_ALGORITHM === 'true';
 const LIMIT_EXPANSION = process.env.LIMIT_EXPANSION === 'true'; // limits the expansion to the tiles already affected by the scan
+const EXPANSION_RATE = parseEnvInt(process.env.EXPANSION_RATE, 5);
 
 const TILE_SIZE = 1000;
 const LOG_INTERVAL = 200; // Log every 200 pixels
@@ -387,7 +388,7 @@ async function run() {
       let task;
     
       if (taskIndex < pendingTasks.length) {
-        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length &&dateNow % 5 !== 0) { // one in 5 chance of doing expansion anyway
+        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length &&dateNow % EXPANSION_RATE !== 0) { // one in 5 chance of doing expansion anyway
             task = expansionQueue[expansionIndex++];
         } else {
           task = pendingTasks[taskIndex++];
