@@ -468,12 +468,12 @@ async function run() {
 
             log(
               `[Progress]\n` +
-              `  ├─ Pixels: ${scannedThisCycle}/${pendingTasks.length}\n` +
-              `  ├─ Cadence: ${targetInterval}ms (actual: ${actualCadenceText})\n` +
-              `  ├─ Request: ${duration}ms\n` +
-              `  ├─ Cycle time left: ${cycleTimeRemainingMins}m\n` +
-              `  ├─ Total time left: ${timeRemainingMins}m\n` + 
-              `  └─ Last scanned pixel: (${x}, ${y}), tile (${tileX}, ${tileY})\n`
+              `              ├─ Pixels: ${scannedThisCycle}/${pendingTasks.length}\n` +
+              `              ├─ Cadence: ${targetInterval}ms (actual: ${actualCadenceText})\n` +
+              `              ├─ Request: ${duration}ms\n` +
+              `              ├─ Cycle time left: ${cycleTimeRemainingMins}m\n` +
+              `              ├─ Total time left: ${timeRemainingMins}m\n` + 
+              `              └─ Last scanned pixel: (${x}, ${y}), tile (${tileX}, ${tileY})\n`
             );
           }
 
@@ -502,6 +502,7 @@ async function run() {
           log(`Retrying...`);
         } else {
           log(`HTTP ${res.status || 'Network Error'}. Retrying in 30s...`, 'error');
+          consecutiveSuccesses = consecutiveSuccesses % CFG_STREAK_REQS;
           targetInterval += Math.ceil(CFG_STEP_DOWN_MS * consecutiveSuccesses / CFG_STREAK_REQS);
           await wait(30000, shutdownController.signal);
         }
