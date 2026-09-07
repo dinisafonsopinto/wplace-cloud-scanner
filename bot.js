@@ -6,6 +6,8 @@ function parseEnvInt(val, fallback) {
 }
 
 const WORKER_URL = process.env.WORKER_URL;
+const SYNC_SECRET_KEY = process.env.SYNC_SECRET_KEY;
+
 const START_X = parseInt(process.env.START_X, 10);
 const START_Y = parseInt(process.env.START_Y, 10);
 const END_X = parseInt(process.env.END_X, 10);
@@ -106,7 +108,8 @@ async function syncBackendTile(tileX, tileY, batchMap, signal = null) {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${SYNC_SECRET_KEY}`,
         },
         body: JSON.stringify(chunkData),
         signal: signal ?? AbortSignal.any([AbortSignal.timeout(20000), shutdownController.signal]),
