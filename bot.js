@@ -162,7 +162,13 @@ async function fetchPixelOfficial(tileX, tileY, pixelX, pixelY) {
     });
     if (res.ok) {
       const data = await res.json();
-      return { success: true, username: data?.paintedBy?.name || 'Blank / Unknown' };
+      return { 
+        success: true, 
+        username: data?.paintedBy?.name || 'Blank / Unknown',
+        uid: data?.paintedBy?.id || null,
+        aid: data?.paintedBy?.allianceId || null,
+        an: data?.paintedBy?.allianceName || null
+      };
     }
     return { success: false, status: res.status };
   } catch (err) {
@@ -441,7 +447,13 @@ async function run() {
           consecutiveSuccesses++;
 
           if (!discoveriesToFlush[sectorKey]) discoveriesToFlush[sectorKey] = { tx: tileX, ty: tileY, data: {} };
-          discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = { u: res.username, c: currentColor };
+          discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = { 
+            u: res.username, 
+            uid: res.uid,
+            aid: res.aid,
+            an: res.an,
+            c: currentColor,
+          };
 
           if (EXPANSION_ALGORITHM) await checkNeighbors(x, y, pngMap, cloudCache);
 
