@@ -188,10 +188,16 @@ async function run() {
   const totalPixels = (maxX - minX + 1) * (maxY - minY + 1);
   const runStartTime = Date.now();
 
+  const minTileX = Math.floor(minX / TILE_SIZE), maxTileX = Math.floor(maxX / TILE_SIZE);
+  const minTileY = Math.floor(minY / TILE_SIZE), maxTileY = Math.floor(maxY / TILE_SIZE);
+
   // --- EXPANSION ALGORITHM SETUP ---
   const visitedPixels = new Set();
-  const expansionQueue = [];
-  const expansionQueueOutsideOfLimits = [];
+  const scannedPixels = new Set(); // Prevents duplicates across queues
+  
+  const queueTier1 = []; // Inside Bounding Box
+  const queueTier2 = []; // Inside Affected Tiles (Outside Bounding Box)
+  const queueTier3 = []; // All Other Tiles
 
   async function checkNeighbors(px, py, tileDataMap, cacheMap) {
     const neighbors = [
@@ -214,15 +220,15 @@ async function run() {
       const key = `${nx}_${ny}`;
       if (visitedPixels.has(key)) continue;
       
-      let offLimits = true;
+      const isInsideBounds = (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY);
+      
+      const coords = getCoords(nx, ny);
+      const isInsideAffectedTiles = (coords.tileX >= minTileX && coords.tileX <= maxTileX && coords.tileY >= minTileY && coords.tileY <= maxTileY);
 
-      if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) offLimits = false;
-
-      if (offLimits && LIMIT_EXPANSION) {
+      if (!isInsideAffectedTiles && LIMIT_EXPANSION) {
         continue;
       }
       
-      const coords = getCoords(nx, ny);
       const tileKey = `${coords.tileX}_${coords.tileY}`;
       
       // Handle LIMIT_EXPANSION logic
@@ -254,21 +260,16 @@ async function run() {
       if (cachedPixel && cachedPixel.c === neighborColor) continue;
 
       visitedPixels.add(key);
-      if (offLimits) {
-        expansionQueueOutsideOfLimits.push({
-          x: nx, y: ny,
-          tileX: coords.tileX, tileY: coords.tileY,
-          pixelX: coords.pixelX, pixelY: coords.pixelY,
-          currentColor: neighborColor // FIX: Pass the color down!
-        });
-      } else {
-        expansionQueue.push({
-          x: nx, y: ny,
-          tileX: coords.tileX, tileY: coords.tileY,
-          pixelX: coords.pixelX, pixelY: coords.pixelY,
-          currentColor: neighborColor // FIX: Pass the color down!
-        });
-      }
+      const taskObj = {
+        x: nx, y: ny,
+        tileX: coords.tileX, tileY: coords.tileY,
+        pixelX: coords.pixelX, pixelY: coords.pixelY,
+        currentColor: neighborColor 
+      };
+
+      if (isInsideBounds) queueTier1.push(taskObj);
+      else if (isInsideAffectedTiles) queueTier2.push(taskObj);
+      else queueTier3.push(taskObj);
     }
   }
 
@@ -292,9 +293,6 @@ async function run() {
     log(`Expansion rate: ${EXPANSION_RATE}`);
     log('\n');
     const cycleStartTime = Date.now();
-
-    const minTileX = Math.floor(minX / TILE_SIZE), maxTileX = Math.floor(maxX / TILE_SIZE);
-    const minTileY = Math.floor(minY / TILE_SIZE), maxTileY = Math.floor(maxY / TILE_SIZE);
 
     const intersectingTiles = [];
     for (let ty = minTileY; ty <= maxTileY; ty++) {
@@ -374,13 +372,12 @@ async function run() {
     };
 
     let taskIndex = 0;
-    let expansionIndex = 0;
-    let expansionIndexOutsideOfLimits = 0;
+    let t1Idx = 0, t2Idx = 0, t3Idx = 0;
 
     // Main Scanning Loop
     while (
         (taskIndex < pendingTasks.length
-          || (EXPANSION_ALGORITHM && (expansionIndex < expansionQueue.length || expansionIndexOutsideOfLimits < expansionQueueOutsideOfLimits.length)))
+          || (EXPANSION_ALGORITHM && (t1Idx < queueTier1.length || t2Idx < queueTier2.length || t3Idx < queueTier3.length)))
         && !isShuttingDown
     ) {
       const dateNow = Date.now();
@@ -398,19 +395,26 @@ async function run() {
         break;
       }
 
-      let task;
-    
-      if (taskIndex < pendingTasks.length) {
-        if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length && dateNow % EXPANSION_RATE === 0) {
-            task = expansionQueue[expansionIndex++];
-        } else {
-          task = pendingTasks[taskIndex++];
-        }
-      } else if (EXPANSION_ALGORITHM && expansionIndex < expansionQueue.length) {
-        task = expansionQueue[expansionIndex++];
-      } else if (EXPANSION_ALGORITHM && expansionIndexOutsideOfLimits < expansionQueueOutsideOfLimits.length) {
-        task = expansionQueueOutsideOfLimits[expansionIndexOutsideOfLimits++];
+      let task = null;
+      let fromQueue = EXPANSION_ALGORITHM && (taskIndex >= pendingTasks.length || dateNow % EXPANSION_RATE === 0);
+
+      if (fromQueue) {
+        if (t1Idx < queueTier1.length) task = queueTier1[t1Idx++];
+        else if (t2Idx < queueTier2.length) task = queueTier2[t2Idx++];
+        else if (t3Idx < queueTier3.length) task = queueTier3[t3Idx++];
       }
+      
+      if (!task && taskIndex < pendingTasks.length) task = pendingTasks[taskIndex++];
+
+      if (!task && EXPANSION_ALGORITHM) {
+        if (t1Idx < queueTier1.length) task = queueTier1[t1Idx++];
+        else if (t2Idx < queueTier2.length) task = queueTier2[t2Idx++];
+        else if (t3Idx < queueTier3.length) task = queueTier3[t3Idx++];
+      }
+
+      const globalKey = `${task.x}_${task.y}`;
+      if (scannedPixels.has(globalKey)) continue;
+      scannedPixels.add(globalKey);
 
       const { x, y, tileX, tileY, pixelX, pixelY, currentColor } = task;
       const sectorKey = `${tileX}_${tileY}`;
