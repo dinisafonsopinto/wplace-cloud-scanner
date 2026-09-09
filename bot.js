@@ -16,7 +16,7 @@ const END_Y = parseInt(process.env.END_Y, 10);
 const RUN_DURATION_MS = parseEnvInt(process.env.RUN_DURATION_MINS, 20) * 60 * 1000;
 const PAUSE_INTERVAL_MS = parseEnvInt(process.env.PAUSE_INTERVAL_SECS, 10) * 1000;
 const TOTAL_CYCLES = parseEnvInt(process.env.TOTAL_CYCLES, 1);
-const CYCLE_DURATION_MS = Math.ceil(RUN_DURATION_MS / TOTAL_CYCLES);
+const CYCLE_DURATION_MS = Math.ceil((RUN_DURATION_MS - (TOTAL_CYCLES - 1) * PAUSE_INTERVAL_MS) / TOTAL_CYCLES);
 
 const CFG_TARGET_INTERVAL = parseEnvInt(process.env.TARGET_INTERVAL, 500);
 const CFG_MIN_FLOOR = parseEnvInt(process.env.MIN_FLOOR, 399);
