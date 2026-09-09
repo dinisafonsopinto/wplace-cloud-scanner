@@ -67,7 +67,7 @@ async function fetchBackendTile(tileX, tileY) {
   try {
     // Append a unique timestamp to bypass Cloudflare's edge cache!
     const cacheBuster = Date.now();
-    const url = `${WORKER_URL}/tile/${tileX}/${tileY}?t=${cacheBuster}`;
+    const url = `${WORKER_URL}/tile/${tileX}/${tileY}?t=${cacheBuster}&source=bot`;
     
     const res = await fetch(url, { 
       // Also strictly instruct Node's internal fetch not to cache
@@ -104,7 +104,7 @@ async function syncBackendTile(tileX, tileY, batchMap, signal = null) {
   // Send chunks sequentially to prevent Worker HTTP/Memory limits
   for (const [subKey, chunkData] of Object.entries(subSectors)) {
     try {
-      const res = await fetch(`${WORKER_URL}/tile/${tileX}/${tileY}`, {
+      const res = await fetch(`${WORKER_URL}/tile/${tileX}/${tileY}?source=bot`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
