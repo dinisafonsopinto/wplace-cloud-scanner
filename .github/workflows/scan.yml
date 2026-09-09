@@ -6,6 +6,22 @@ on:
 
   workflow_dispatch:
     inputs:
+      start_x:
+        description: 'Start X (Blank = use saved Target)'
+        required: false
+        type: string
+      start_y:
+        description: 'Start Y (Blank = use saved Target)'
+        required: false
+        type: string
+      end_x:
+        description: 'End X (Blank = use saved Target)'
+        required: false
+        type: string
+      end_y:
+        description: 'End Y (Blank = use saved Target)'
+        required: false
+        type: string
       grid_size:
         description: 'Grid divisions (e.g., 2 creates a 2x2 grid with 4 runners)'
         required: true
