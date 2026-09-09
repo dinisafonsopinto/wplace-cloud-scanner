@@ -272,26 +272,25 @@ async function run() {
     }
   }
 
-  log(`Target Coordinates: [${minX}, ${minY}] to [${maxX}, ${maxY}] (${totalPixels} total pixels)`);
-  log(`Execution Plan: ${TOTAL_CYCLES} cycle(s), max ${CYCLE_DURATION_MS / 60000}m run per cycle (${RUN_DURATION_MS / 60000}m total)`);
-  log(`Pause between cycles: ${PAUSE_INTERVAL_MS}ms`);
-  log(`Target interval: ${CFG_TARGET_INTERVAL}ms`);
-  log(`Min floor: ${CFG_MIN_FLOOR}ms`);
-  log(`429 penalty: ${CFG_PENALTY_MS_429}ms`);
-  log(`429 pause: ${CFG_PAUSE_SEC_429} seconds`);
-  log(`Step down: ${CFG_STEP_DOWN_MS}ms`);
-  log(`Streak reqs: ${CFG_STREAK_REQS}`);
-  log(`Flush interval: ${FLUSH_INTERVAL} pixels`);
-  log(`Expansion algorithm: ${EXPANSION_ALGORITHM}`);
-  log(`Limit expansion: ${LIMIT_EXPANSION}`);
-  log(`Expansion rate: ${EXPANSION_RATE}`);
-  log('\n');
-
   let minFloor = CFG_MIN_FLOOR; // don't forget learnt minimum floors
 
   for (let cycle = 1; cycle <= TOTAL_CYCLES; cycle++) {
     if (isShuttingDown) break;
     log(`================== STARTING CYCLE ${cycle}/${TOTAL_CYCLES} ==================`);
+    log(`Target Coordinates: [${minX}, ${minY}] to [${maxX}, ${maxY}] (${totalPixels} total pixels)`);
+    log(`Execution Plan: ${TOTAL_CYCLES} cycle(s), max ${CYCLE_DURATION_MS / 60000}m run per cycle (${RUN_DURATION_MS / 60000}m total)`);
+    log(`Pause between cycles: ${PAUSE_INTERVAL_MS}ms`);
+    log(`Target interval: ${CFG_TARGET_INTERVAL}ms`);
+    log(`Min floor: ${CFG_MIN_FLOOR}ms`);
+    log(`429 penalty: ${CFG_PENALTY_MS_429}ms`);
+    log(`429 pause: ${CFG_PAUSE_SEC_429} seconds`);
+    log(`Step down: ${CFG_STEP_DOWN_MS}ms`);
+    log(`Streak reqs: ${CFG_STREAK_REQS}`);
+    log(`Flush interval: ${FLUSH_INTERVAL} pixels`);
+    log(`Expansion algorithm: ${EXPANSION_ALGORITHM}`);
+    log(`Limit expansion: ${LIMIT_EXPANSION}`);
+    log(`Expansion rate: ${EXPANSION_RATE}`);
+    log('\n');
     const cycleStartTime = Date.now();
 
     const minTileX = Math.floor(minX / TILE_SIZE), maxTileX = Math.floor(maxX / TILE_SIZE);
@@ -484,10 +483,8 @@ async function run() {
             log(
               `[Progress]\n` +
               `              ├─ Pixels: ${scannedThisCycle}/${pendingTasks.length}\n` +
-              `              ├─ Cadence: ${targetInterval}ms (actual: ${actualCadenceText})\n` +
-              `              ├─ Request: ${duration}ms\n` +
-              `              ├─ Cycle time left: ${cycleTimeRemainingMins}m\n` +
-              `              ├─ Total time left: ${timeRemainingMins}m\n` + 
+              `              ├─ Cadence: ${targetInterval}ms (actual: ${actualCadenceText}; Request: ${duration}ms)\n` +
+              `              ├─ Time left: ${cycleTimeRemainingMins}m (total: ${timeRemainingMins}m)\n` + 
               `              └─ Last scanned pixel: (${x}, ${y}), tile (${tileX}, ${tileY})\n`
             );
           }
