@@ -11,7 +11,11 @@ on:
         required: true
         default: '2'
         type: string
-      # ... (You can keep your other inputs like run_duration_mins here, removing start/end coordinates)
+      stagger_interval_secs:
+        description: 'Stagger delay between each bot starting (s)'
+        required: false
+        default: '0'
+        type: string
       run_duration_mins:
         description: 'Run duration mins'
         required: false
@@ -86,6 +90,8 @@ jobs:
             const width = Math.floor((endX - startX + 1) / gridSize);
             const height = Math.floor((endY - startY + 1) / gridSize);
             const matrix = { include: [] };
+            
+            let jobIndex = 0; // Initialize a counter for the jobs
 
             for(let i=0; i<gridSize; i++) {
               for(let j=0; j<gridSize; j++) {
@@ -99,8 +105,10 @@ jobs:
                   start_y: sy.toString(),
                   end_x: ex.toString(),
                   end_y: ey.toString(),
-                  zone: `Sector ${i}-${j}`
+                  zone: `Sector ${i}-${j}`,
+                  index: jobIndex.toString() // Add the index to the matrix output
                 });
+                jobIndex++;
               }
             }
             console.log(`matrix=${JSON.stringify(matrix)}`);
@@ -121,23 +129,37 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20 # Note: Node 20/22 is recommended as Node 24 isn't standard yet
+          node-version: 20
 
       - name: Install Dependencies
         run: npm install
+
+      - name: Staggered Start Delay
+        env:
+          STAGGER_INTERVAL: ${{ inputs.stagger_interval_secs != '' && inputs.stagger_interval_secs || vars.STAGGER_INTERVAL_SECS || '0' }}
+        run: |
+          # Multiply the interval by the job's unique index
+          DELAY=$(( ${{ matrix.index }} * STAGGER_INTERVAL ))
+          if [ "$DELAY" -gt "0" ]; then
+            echo "Staggering start: Sleeping for $DELAY seconds before executing bot..."
+            sleep $DELAY
+          else
+            echo "No stagger delay required for this job."
+          fi
 
       - name: Execute Scanner
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           SYNC_SECRET_KEY: ${{ secrets.SYNC_SECRET_KEY }}
-          # Inject the unique matrix coordinates directly into the environment
+
           START_X: ${{ matrix.start_x }}
           START_Y: ${{ matrix.start_y }}
           END_X: ${{ matrix.end_x }}
           END_Y: ${{ matrix.end_y }}
+
           EXPANSION_ALGORITHM: ${{ inputs.expansion_algorithm != '' && inputs.expansion_algorithm || vars.EXPANSION_ALGORITHM }}
           LIMIT_EXPANSION: ${{ inputs.limit_expansion != '' && inputs.limit_expansion || vars.LIMIT_EXPANSION }}
-          # variables with hardcoded defaults
+
           RUN_DURATION_MINS: ${{ inputs.run_duration_mins != '' && inputs.run_duration_mins || vars.RUN_DURATION_MINS || '67'}}
           PAUSE_INTERVAL_SECS: ${{ inputs.pause_interval_secs != '' && inputs.pause_interval_secs || vars.PAUSE_INTERVAL_SECS || '3' }}
           TOTAL_CYCLES: ${{ inputs.total_cycles != '' && inputs.total_cycles || vars.TOTAL_CYCLES || '1' }}
