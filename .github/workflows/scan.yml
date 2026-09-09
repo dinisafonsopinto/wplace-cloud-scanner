@@ -2,27 +2,16 @@ name: Wplace Background Scanner
 
 on:
   schedule:
-    # Runs at minute 42 every 2 hours UTC
-    - cron: '42 */4 * * *'
+    - cron: '42 */6 * * *'
 
   workflow_dispatch:
     inputs:
-      start_x:
-        description: 'Start X (Blank = use saved Target)'
-        required: false
+      grid_size:
+        description: 'Grid divisions (e.g., 2 creates a 2x2 grid with 4 runners)'
+        required: true
+        default: '2'
         type: string
-      start_y:
-        description: 'Start Y (Blank = use saved Target)'
-        required: false
-        type: string
-      end_x:
-        description: 'End X (Blank = use saved Target)'
-        required: false
-        type: string
-      end_y:
-        description: 'End Y (Blank = use saved Target)'
-        required: false
-        type: string
+      # ... (You can keep your other inputs like run_duration_mins here, removing start/end coordinates)
       run_duration_mins:
         description: 'Run duration mins'
         required: false
@@ -73,8 +62,58 @@ on:
         type: string
 
 jobs:
-  scan:
+  setup:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - name: Calculate Grid Coordinates
+        id: generate-matrix
+        env:
+          START_X: ${{ vars.TARGET_START_X }}
+          START_Y: ${{ vars.TARGET_START_Y }}
+          END_X: ${{ vars.TARGET_END_X }}
+          END_Y: ${{ vars.TARGET_END_Y }}
+          GRID_SIZE: ${{ inputs.grid_size || vars.grid_size || '2' }}
+        run: |
+          node -e '
+            const startX = parseInt(process.env.START_X, 10);
+            const startY = parseInt(process.env.START_Y, 10);
+            const endX = parseInt(process.env.END_X, 10);
+            const endY = parseInt(process.env.END_Y, 10);
+            const gridSize = parseInt(process.env.GRID_SIZE, 10);
+
+            const width = Math.floor((endX - startX + 1) / gridSize);
+            const height = Math.floor((endY - startY + 1) / gridSize);
+            const matrix = { include: [] };
+
+            for(let i=0; i<gridSize; i++) {
+              for(let j=0; j<gridSize; j++) {
+                const sx = startX + (i * width);
+                const sy = startY + (j * height);
+                const ex = (i === gridSize - 1) ? endX : sx + width - 1;
+                const ey = (j === gridSize - 1) ? endY : sy + height - 1;
+                
+                matrix.include.push({
+                  start_x: sx.toString(),
+                  start_y: sy.toString(),
+                  end_x: ex.toString(),
+                  end_y: ey.toString(),
+                  zone: `Sector ${i}-${j}`
+                });
+              }
+            }
+            console.log(`matrix=${JSON.stringify(matrix)}`);
+          ' >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Prevents one failing bot from canceling all other bots
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    
+    name: Scan ${{ matrix.zone }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -82,20 +121,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20 # Note: Node 20/22 is recommended as Node 24 isn't standard yet
 
       - name: Install Dependencies
         run: npm install
 
       - name: Execute Scanner
         env:
-          # variables without hardcoded defaults
           WORKER_URL: ${{ secrets.WORKER_URL }}
           SYNC_SECRET_KEY: ${{ secrets.SYNC_SECRET_KEY }}
-          START_X: ${{ inputs.start_x != '' && inputs.start_x || vars.TARGET_START_X }}
-          START_Y: ${{ inputs.start_y != '' && inputs.start_y || vars.TARGET_START_Y }}
-          END_X: ${{ inputs.end_x != '' && inputs.end_x || vars.TARGET_END_X }}
-          END_Y: ${{ inputs.end_y != '' && inputs.end_y || vars.TARGET_END_Y }}
+          # Inject the unique matrix coordinates directly into the environment
+          START_X: ${{ matrix.start_x }}
+          START_Y: ${{ matrix.start_y }}
+          END_X: ${{ matrix.end_x }}
+          END_Y: ${{ matrix.end_y }}
           EXPANSION_ALGORITHM: ${{ inputs.expansion_algorithm != '' && inputs.expansion_algorithm || vars.EXPANSION_ALGORITHM }}
           LIMIT_EXPANSION: ${{ inputs.limit_expansion != '' && inputs.limit_expansion || vars.LIMIT_EXPANSION }}
           # variables with hardcoded defaults
