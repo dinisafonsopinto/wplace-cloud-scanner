@@ -94,7 +94,7 @@ jobs:
           START_Y: ${{ vars.TARGET_START_Y }}
           END_X: ${{ vars.TARGET_END_X }}
           END_Y: ${{ vars.TARGET_END_Y }}
-          GRID_SIZE: ${{ inputs.grid_size || vars.grid_size || '2' }}
+          GRID_SIZE: ${{ inputs.grid_size || vars.GRID_SIZE || '2' }}
         run: |
           node -e '
             const startX = parseInt(process.env.START_X, 10);
