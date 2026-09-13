@@ -235,7 +235,7 @@ async function run() {
       { nx: px + 5, ny: py }, // Right-Right
       { nx: px, ny: py - 5 }, // Up-Up
       { nx: px, ny: py + 5 }, // Down-Down
-  ];
+    ];
     
     for (const { nx, ny } of neighbors) {
       const key = `${nx}_${ny}`;
@@ -284,8 +284,8 @@ async function run() {
       // Stop expanding if the pixel is empty/transparent (-1)
       if (neighborColor === -1) continue;
 
-      const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
-      if (cachedPixel && cachedPixel.c === neighborColor) continue;
+      // const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
+      // if (cachedPixel && cachedPixel.c === neighborColor) continue;
 
       visitedPixels.add(key);
       const taskObj = {
@@ -350,6 +350,7 @@ async function run() {
         if (cached && cached.c !== null && currentColor !== null && cached.c === currentColor) {
           instantMatches++;
           
+          visitedPixels.add(`${x}_${y}`);
           if (EXPANSION_ALGORITHM && (x === minX || x === maxX || y === minY || y === maxY)) {
             perimeterSeeds.push({ x, y });
           }
