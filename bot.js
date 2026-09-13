@@ -13,6 +13,11 @@ const START_Y = parseInt(process.env.START_Y, 10);
 const END_X = parseInt(process.env.END_X, 10);
 const END_Y = parseInt(process.env.END_Y, 10);
 
+const GLOBAL_MIN_X = parseEnvInt(process.env.GLOBAL_MIN_X, Math.min(START_X, END_X));
+const GLOBAL_MAX_X = parseEnvInt(process.env.GLOBAL_MAX_X, Math.max(START_X, END_X));
+const GLOBAL_MIN_Y = parseEnvInt(process.env.GLOBAL_MIN_Y, Math.min(START_Y, END_Y));
+const GLOBAL_MAX_Y = parseEnvInt(process.env.GLOBAL_MAX_Y, Math.max(START_Y, END_Y));
+
 const RUN_DURATION_MS = parseEnvInt(process.env.RUN_DURATION_MINS, 20) * 60 * 1000;
 const PAUSE_INTERVAL_MS = parseEnvInt(process.env.PAUSE_INTERVAL_SECS, 10) * 1000;
 const TOTAL_CYCLES = parseEnvInt(process.env.TOTAL_CYCLES, 1);
@@ -56,33 +61,47 @@ function getCoords(absX, absY) {
 
 const wait = (ms, signal = null) => new Promise((resolve) => {
   if (signal?.aborted) return resolve();
-  const timer = setTimeout(resolve, ms);
-  signal?.addEventListener('abort', () => {
+
+  const onAbort = () => {
     clearTimeout(timer);
     resolve();
-  }, { once: true });
+  };
+  
+  const timer = setTimeout(() => {
+    // Remove the listener so it doesn't pile up in memory
+    if (signal) signal.removeEventListener('abort', onAbort);
+    resolve();
+  }, ms);
+  
+  if (signal) signal.addEventListener('abort', onAbort, { once: true });
 });
 
-async function fetchBackendTile(tileX, tileY) {
-  try {
-    // Append a unique timestamp to bypass Cloudflare's edge cache!
-    const cacheBuster = Date.now();
-    const url = `${WORKER_URL}/tile/${tileX}/${tileY}?t=${cacheBuster}&source=bot`;
+async function fetchBackendTile(tileX, tileY, retries = 3) {
+  const cacheBuster = Date.now();
+  const url = `${WORKER_URL}/tile/${tileX}/${tileY}?t=${cacheBuster}&source=bot`;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url, { 
+        cache: 'no-store', 
+        signal: AbortSignal.any([
+          AbortSignal.timeout(15000), 
+          shutdownController.signal
+        ]),
+      });
+      
+      if (res.ok) return await res.json();
+      log(`Failed to fetch cache for sector (${tileX}, ${tileY}): HTTP ${res.status}. Retrying...`, 'warn');
+    } catch (err) {
+      log(`Error fetching sector (${tileX}, ${tileY}): ${err.message}`, 'warn');
+    }
     
-    const res = await fetch(url, { 
-      // Also strictly instruct Node's internal fetch not to cache
-      cache: 'no-store', 
-      signal: AbortSignal.any([
-        AbortSignal.timeout(15000), 
-        shutdownController.signal
-      ]),
-    });
-    
-    if (res.ok) return await res.json();
-  } catch (err) {
-    log(`Failed to fetch cache for sector (${tileX}, ${tileY}): ${err.message}`, 'warn');
+    if (isShuttingDown) return null;
+    await wait(3000, shutdownController.signal);
   }
-  return {};
+  
+  // Throwing prevents the loop from proceeding with a false-empty cache
+  throw new Error(`Critical: Failed to load D1 cache for (${tileX}, ${tileY}) after ${retries} attempts.`);
 }
 
 async function syncBackendTile(tileX, tileY, batchMap, signal = null) {
@@ -135,8 +154,10 @@ async function syncBackendTile(tileX, tileY, batchMap, signal = null) {
 }
 
 async function fetchTileImageData(tileX, tileY) {
-  const url = `https://backend.wplace.live/files/s0/tiles/${tileX}/${tileY}.png`;
+  const cacheBuster = Date.now();
+  const url = `https://backend.wplace.live/files/s0/tiles/${tileX}/${tileY}.png?t=${cacheBuster}`;
   const res = await fetch(url, {
+    cache: 'no-store',
     signal: AbortSignal.any([
       AbortSignal.timeout(30000), 
       shutdownController.signal
@@ -221,6 +242,13 @@ async function run() {
       if (visitedPixels.has(key)) continue;
       
       const isInsideBounds = (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY);
+
+      // Prevent bot overlap! If the pixel is outside this runner's bounds 
+      // but inside the overall grid bounds, let the neighboring runner handle it.
+      if (!isInsideBounds) {
+        const isInsideGlobalGrid = (nx >= GLOBAL_MIN_X && nx <= GLOBAL_MAX_X && ny >= GLOBAL_MIN_Y && ny <= GLOBAL_MAX_Y);
+        if (isInsideGlobalGrid) continue;
+      }
       
       const coords = getCoords(nx, ny);
       const isInsideAffectedTiles = (coords.tileX >= minTileX && coords.tileX <= maxTileX && coords.tileY >= minTileY && coords.tileY <= maxTileY);
@@ -310,6 +338,7 @@ async function run() {
 
     const pendingTasks = [];
     let instantMatches = 0;
+    const perimeterSeeds = [];
 
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
@@ -320,6 +349,10 @@ async function run() {
 
         if (cached && cached.c !== null && currentColor !== null && cached.c === currentColor) {
           instantMatches++;
+          
+          if (EXPANSION_ALGORITHM && (x === minX || x === maxX || y === minY || y === maxY)) {
+            perimeterSeeds.push({ x, y });
+          }
         } else {
           pendingTasks.push({ x, y, tileX, tileY, pixelX, pixelY, currentColor });
         }
@@ -327,7 +360,21 @@ async function run() {
     }
 
     log(`Diff Summary: ${instantMatches} static pixels resolved. ${pendingTasks.length} pending queries.`, 'success');
-    if (pendingTasks.length === 0) break;
+    
+    // Jumpstart the expansion algorithm from the perimeter
+    if (EXPANSION_ALGORITHM && perimeterSeeds.length > 0) {
+      log(`Seeding expansion algorithm from ${perimeterSeeds.length} perimeter pixels...`);
+      for (const seed of perimeterSeeds) {
+        await checkNeighbors(seed.x, seed.y, pngMap, cloudCache);
+      }
+    }
+
+    // Only break the cycle if there are no pending tasks AND no queued expansions
+    const hasQueuedExpansion = queueTier1.length > 0 || queueTier2.length > 0 || queueTier3.length > 0;
+    if (pendingTasks.length === 0 && (!EXPANSION_ALGORITHM || !hasQueuedExpansion)) {
+      log('No pending tasks or expansion paths found. Stopping cycle.', 'success');
+      break;
+    }
 
     let targetInterval = CFG_TARGET_INTERVAL;
     let consecutiveSuccesses = 0, scannedThisCycle = 0;
@@ -360,8 +407,12 @@ async function run() {
         if (!isShuttingDown && biderctional) {
           log(`Pulling latest cloud state...`);
           for (const { tx, ty } of intersectingTiles) {
+            try {
               const updatedData = await fetchBackendTile(tx, ty);
-              cloudCache.set(`${tx}_${ty}`, updatedData);
+              if (updatedData) cloudCache.set(`${tx}_${ty}`, updatedData);
+            } catch (err) {
+              log(`Mid-cycle cache pull failed for (${tx}, ${ty}). Keeping existing cache.`, 'warn');
+            }
           }
         }
       }
