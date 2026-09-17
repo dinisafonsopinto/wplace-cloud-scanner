@@ -90,7 +90,14 @@ async function fetchBackendTile(tileX, tileY, retries = 3) {
         ]),
       });
       
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const rawArray = await res.json();
+        const mergedData = {};
+        for (const row of rawArray) {
+            if (row.data) Object.assign(mergedData, JSON.parse(row.data));
+        }
+        return mergedData;
+      }
       log(`Failed to fetch cache for sector (${tileX}, ${tileY}): HTTP ${res.status}. Retrying...`, 'warn');
     } catch (err) {
       log(`Error fetching sector (${tileX}, ${tileY}): ${err.message}`, 'warn');
