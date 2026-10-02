@@ -118,3 +118,62 @@ jobs:
           name: users-${{ matrix.zone }}
           path: users-${{ matrix.zone }}.json
           retention-days: 60
+  # Merge all results into one file
+  merge-results:
+    needs: scan
+    runs-on: ubuntu-latest
+    if: always() # Runs even if a runner gets cancelled, so you don't lose data
+    steps:
+      - name: Download all JSON artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results
+          pattern: users-*
+          merge-multiple: true # Dumps all the files into the same folder
+
+      - name: Combine and Generate CSV
+        run: |
+          node -e '
+            const fs = require("fs");
+            // Find all downloaded JSON files
+            const files = fs.readdirSync("all-results").filter(f => f.startsWith("users-Sector") && f.endsWith(".json"));
+            
+            const usersMap = new Map();
+
+            // Loop through all files and merge the user counts
+            for (const file of files) {
+              const data = JSON.parse(fs.readFileSync(`all-results/${file}`, "utf8"));
+              for (const u of data) {
+                const key = u.discordId || u.username;
+                if (!usersMap.has(key)) {
+                  usersMap.set(key, { username: u.username, discordId: u.discordId, pixels_painted: 0 });
+                }
+                // Add pixels (handles cases where a user painted across multiple sectors)
+                usersMap.get(key).pixels_painted += u.pixels_painted;
+              }
+            }
+
+            // Sort by most pixels painted
+            const sortedUsers = Array.from(usersMap.values()).sort((a, b) => b.pixels_painted - a.pixels_painted);
+
+            // Write merged JSON
+            fs.writeFileSync("all-results/Final-Merged-Results.json", JSON.stringify(sortedUsers, null, 2));
+
+            // Write CSV for Excel
+            const csvLines = ["Username,Discord ID,Pixels Painted"];
+            for (const u of sortedUsers) {
+              // Wrap username in quotes to prevent commas in names from breaking the spreadsheet
+              const safeName = `"${String(u.username).replace(/"/g, '""')}"`;
+              csvLines.push(`${safeName},${u.discordId || ""},${u.pixels_painted}`);
+            }
+            fs.writeFileSync("all-results/Final-Merged-Results.csv", csvLines.join("\n"));
+          '
+
+      - name: Upload Final Excel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Final-Merged-Results
+          path: |
+            all-results/Final-Merged-Results.csv
+            all-results/Final-Merged-Results.json
+          retention-days: 5
