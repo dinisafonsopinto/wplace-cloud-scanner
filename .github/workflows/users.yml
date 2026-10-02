@@ -9,10 +9,10 @@ on:
 # ⚙️ EDIT YOUR SCRAPER SETTINGS HERE ⚙️
 # ==========================================
 env:
-  TARGET_START_X: '0'
-  TARGET_START_Y: '0'
-  TARGET_END_X: '2000'
-  TARGET_END_Y: '2000'
+  TARGET_START_X: '541505'
+  TARGET_START_Y: '762901'
+  TARGET_END_X: '545465'
+  TARGET_END_Y: '766646'
   GRID_SIZE: '3'
 # ==========================================
 
