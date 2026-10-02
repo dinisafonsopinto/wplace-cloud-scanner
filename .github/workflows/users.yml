@@ -1,18 +1,19 @@
 name: Gather Users from Area
 
 on:
-  workflow_dispatch: # Allows you to trigger it manually via a button
+  schedule:
+    - cron: '11 */7 * * *'
+  workflow_dispatch:
 
 # ==========================================
 # ⚙️ EDIT YOUR SCRAPER SETTINGS HERE ⚙️
 # ==========================================
 env:
-  # if you change the coordinates, you must change the version of the cache too (v1, v2, etc)
-  TARGET_START_X: '541505'
-  TARGET_START_Y: '762901'
-  TARGET_END_X: '545465'
-  TARGET_END_Y: '766646'
-  GRID_SIZE: '3'      # e.g., 3 creates a 3x3 grid (9 runners). 1 creates 1 runner.
+  TARGET_START_X: '0'
+  TARGET_START_Y: '0'
+  TARGET_END_X: '2000'
+  TARGET_END_Y: '2000'
+  GRID_SIZE: '3'
 # ==========================================
 
 jobs:
@@ -80,15 +81,13 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      # Restore the state from the previous run
-      - name: Restore State Cache
+      - name: Restore Global State Cache
         uses: actions/cache/restore@v4
-        id: cache-restore
         with:
-          path: state-${{ matrix.zone }}.json
-          key: state-v2-${{ matrix.zone }}-${{ github.run_id }}
+          path: global-state.json
+          key: global-master-state-v1-${{ github.run_id }}
           restore-keys: |
-            state-v2-${{ matrix.zone }}-
+            global-master-state-v1-
 
       - name: Execute Scraper
         env:
@@ -97,83 +96,123 @@ jobs:
           END_X: ${{ matrix.end_x }}
           END_Y: ${{ matrix.end_y }}
           ZONE_NAME: ${{ matrix.zone }}
-          RUN_DURATION_MINS: '10' # Safely stop at 5.5 hours
+          RUN_DURATION_MINS: '20'
           TARGET_INTERVAL: '500'
           MIN_FLOOR: '399'
-        run: node users.js
+        run: node scraper.js
 
-      # Save the state so the next workflow execution can pick it up
-      - name: Save State Cache
-        uses: actions/cache/save@v4
-        if: always() 
-        with:
-          path: state-${{ matrix.zone }}.json
-          key: state-v2-${{ matrix.zone }}-${{ github.run_id }}
-
-      # Upload the JSON file for download
-      - name: Upload Users JSON
+      - name: Upload Local Results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: users-${{ matrix.zone }}
-          path: users-${{ matrix.zone }}.json
-          retention-days: 60
-  # Merge all results into one file
+          name: local-results-${{ matrix.zone }}
+          path: local-results-${{ matrix.zone }}.json
+          retention-days: 1
+
   merge-results:
     needs: scan
     runs-on: ubuntu-latest
-    if: always() # Runs even if a runner gets cancelled, so you don't lose data
+    if: always() 
     steps:
-      - name: Download all JSON artifacts
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore Base Global State
+        uses: actions/cache/restore@v4
+        with:
+          path: global-state.json
+          key: global-master-state-v1-${{ github.run_id }}
+          restore-keys: |
+            global-master-state-v1-
+
+      - name: Download all Local Results
         uses: actions/download-artifact@v4
         with:
-          path: all-results
-          pattern: users-*
-          merge-multiple: true # Dumps all the files into the same folder
+          path: local-results
+          pattern: local-results-*
+          merge-multiple: true
 
-      - name: Combine and Generate CSV
+      - name: Merge States and Generate CSV
         run: |
           node -e '
             const fs = require("fs");
-            // Find all downloaded JSON files
-            const files = fs.readdirSync("all-results").filter(f => f.startsWith("users-Sector") && f.endsWith(".json"));
             
-            const usersMap = new Map();
-
-            // Loop through all files and merge the user counts
-            for (const file of files) {
-              const data = JSON.parse(fs.readFileSync(`all-results/${file}`, "utf8"));
-              for (const u of data) {
-                const key = u.discord || u.username;
-                if (!usersMap.has(key)) {
-                  usersMap.set(key, { username: u.username, discord: u.discord, allianceName: u.allianceName, pixels_painted: 0 });
+            let globalState = { users: {}, processed_ranges: {} };
+            if (fs.existsSync("global-state.json")) {
+              globalState = JSON.parse(fs.readFileSync("global-state.json", "utf8"));
+            }
+            
+            // Mathematical function to compress overlapping or adjacent ranges
+            function mergeRanges(ranges1, ranges2) {
+              const combined = [...(ranges1 || []), ...(ranges2 || [])];
+              if (combined.length === 0) return [];
+              
+              combined.sort((a, b) => a[0] - b[0]); // Sort by starting X
+              const merged = [combined[0]];
+              
+              for (let i = 1; i < combined.length; i++) {
+                const last = merged[merged.length - 1];
+                const current = combined[i];
+                // If they touch or overlap (e.g., [0,5] and [6,10] OR [0,5] and [3,8])
+                if (current[0] <= last[1] + 1) {
+                  last[1] = Math.max(last[1], current[1]);
+                } else {
+                  merged.push(current);
                 }
-                // Add pixels (handles cases where a user painted across multiple sectors)
-                usersMap.get(key).pixels_painted += u.pixels_painted;
+              }
+              return merged;
+            }
+
+            const files = fs.existsSync("local-results") ? fs.readdirSync("local-results").filter(f => f.endsWith(".json")) : [];
+            for (const file of files) {
+              const localData = JSON.parse(fs.readFileSync(`local-results/${file}`, "utf8"));
+              
+              // 1. Merge the mathematical ranges
+              if (localData.processed_ranges) {
+                for (const [y, rowRanges] of Object.entries(localData.processed_ranges)) {
+                  globalState.processed_ranges[y] = mergeRanges(globalState.processed_ranges[y], rowRanges);
+                }
+              }
+
+              // 2. Merge user counts
+              if (localData.users) {
+                for (const [key, u] of Object.entries(localData.users)) {
+                  if (!globalState.users[key]) {
+                    globalState.users[key] = { username: u.username, discord: u.discord, allianceName: u.allianceName, pixels_painted: 0 };
+                  }
+                  globalState.users[key].pixels_painted += u.pixels_painted;
+                }
               }
             }
 
-            // Sort by most pixels painted
-            const sortedUsers = Array.from(usersMap.values()).sort((a, b) => b.pixels_painted - a.pixels_painted);
+            fs.writeFileSync("global-state.json", JSON.stringify(globalState));
 
-            // Write merged JSON
-            fs.writeFileSync("all-results/Final-Merged-Results.json", JSON.stringify(sortedUsers, null, 2));
-
-            // Write CSV for Excel
+            const sortedUsers = Object.values(globalState.users).sort((a, b) => b.pixels_painted - a.pixels_painted);
+            
             const csvLines = ["Wplace Username,Discord Username,Alliance,Pixels Painted"];
             for (const u of sortedUsers) {
-              // Wrap username in quotes to prevent commas in names from breaking the spreadsheet
-              const safeName = `"${String(u.username).replace(/"/g, '""')}"`;
-              csvLines.push(`${safeName},${u.discordId || ""},${u.allianceName || ""},${u.pixels_painted}`);
+              const safeName = `"${String(u.username || "").replace(/"/g, '""')}"`;
+              const safeAlliance = `"${String(u.allianceName || "").replace(/"/g, '""')}"`;
+              csvLines.push(`${safeName},${u.discord || ""},${safeAlliance},${u.pixels_painted}`);
             }
-            fs.writeFileSync("all-results/Final-Merged-Results.csv", csvLines.join("\n"));
+            fs.writeFileSync("Final-Merged-Results.csv", csvLines.join("\n"));
+            fs.writeFileSync("Final-Merged-Results.json", JSON.stringify(sortedUsers, null, 2));
           '
 
-      - name: Upload Final Excel Artifact
+      - name: Save Global State Cache
+        uses: actions/cache/save@v4
+        with:
+          path: global-state.json
+          key: global-master-state-v1-${{ github.run_id }}
+
+      - name: Upload Final Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Final-Merged-Results
           path: |
-            all-results/Final-Merged-Results.csv
-            all-results/Final-Merged-Results.json
-          retention-days: 5
+            Final-Merged-Results.csv
+            Final-Merged-Results.json
+            global-state.json
+          retention-days: 60
