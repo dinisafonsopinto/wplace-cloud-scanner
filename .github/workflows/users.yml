@@ -7,10 +7,11 @@ on:
 # ⚙️ EDIT YOUR SCRAPER SETTINGS HERE ⚙️
 # ==========================================
 env:
-  TARGET_START_X: '0'
-  TARGET_START_Y: '0'
-  TARGET_END_X: '2000'
-  TARGET_END_Y: '2000'
+  # if you change the coordinates, you must change the version of the cache too (v1, v2, etc)
+  TARGET_START_X: '541505'
+  TARGET_START_Y: '762901'
+  TARGET_END_X: '545465'
+  TARGET_END_Y: '766646'
   GRID_SIZE: '3'      # e.g., 3 creates a 3x3 grid (9 runners). 1 creates 1 runner.
 # ==========================================
 
@@ -85,9 +86,9 @@ jobs:
         id: cache-restore
         with:
           path: state-${{ matrix.zone }}.json
-          key: state-v1-${{ matrix.zone }}-${{ github.run_id }}
+          key: state-v2-${{ matrix.zone }}-${{ github.run_id }}
           restore-keys: |
-            state-v1-${{ matrix.zone }}-
+            state-v2-${{ matrix.zone }}-
 
       - name: Execute Scraper
         env:
@@ -107,7 +108,7 @@ jobs:
         if: always() 
         with:
           path: state-${{ matrix.zone }}.json
-          key: state-v1-${{ matrix.zone }}-${{ github.run_id }}
+          key: state-v2-${{ matrix.zone }}-${{ github.run_id }}
 
       # Upload the JSON file for download
       - name: Upload Users JSON

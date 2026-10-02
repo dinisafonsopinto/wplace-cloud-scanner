@@ -96,7 +96,8 @@ async function fetchPixelOfficial(tileX, tileY, pixelX, pixelY) {
       return { 
         success: true, 
         username: data?.paintedBy?.name || 'Blank / Unknown',
-        discordId: data?.paintedBy?.id || null
+        discord: data?.paintedBy?.discord || null,
+        allianceName: data?.paintedBy?.allianceName || null,
       };
     }
     return { success: false, status: res.status };
@@ -186,9 +187,9 @@ async function run() {
           resolved = true;
           
           if (res.username !== 'Blank / Unknown') {
-            const key = res.discordId || res.username;
+            const key = res.discord || res.username;
             if (!state.users[key]) {
-              state.users[key] = { username: res.username, discordId: res.discordId, pixels_painted: 0 };
+              state.users[key] = { username: res.username, discord: res.discord, allianceName: res.allianceName, pixels_painted: 0 };
             }
             state.users[key].pixels_painted++;
           }
