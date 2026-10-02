@@ -99,7 +99,7 @@ jobs:
           RUN_DURATION_MINS: '10' # Safely stop at 5.5 hours
           TARGET_INTERVAL: '500'
           MIN_FLOOR: '399'
-        run: node scraper.js
+        run: node users.js
 
       # Save the state so the next workflow execution can pick it up
       - name: Save State Cache
