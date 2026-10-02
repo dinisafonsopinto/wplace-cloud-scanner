@@ -1,0 +1,119 @@
+name: Gather Users from Area
+
+on:
+  workflow_dispatch: # Allows you to trigger it manually via a button
+
+# ==========================================
+# ⚙️ EDIT YOUR SCRAPER SETTINGS HERE ⚙️
+# ==========================================
+env:
+  TARGET_START_X: '0'
+  TARGET_START_Y: '0'
+  TARGET_END_X: '2000'
+  TARGET_END_Y: '2000'
+  GRID_SIZE: '3'      # e.g., 3 creates a 3x3 grid (9 runners). 1 creates 1 runner.
+# ==========================================
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - name: Calculate Grid Coordinates
+        id: generate-matrix
+        env:
+          START_X: ${{ env.TARGET_START_X }}
+          START_Y: ${{ env.TARGET_START_Y }}
+          END_X: ${{ env.TARGET_END_X }}
+          END_Y: ${{ env.TARGET_END_Y }}
+          GRID_SIZE_ENV: ${{ env.GRID_SIZE }}
+        run: |
+          node -e '
+            const startX = parseInt(process.env.START_X, 10);
+            const startY = parseInt(process.env.START_Y, 10);
+            const endX = parseInt(process.env.END_X, 10);
+            const endY = parseInt(process.env.END_Y, 10);
+            const gridSize = parseInt(process.env.GRID_SIZE_ENV, 10);
+
+            const width = Math.floor((endX - startX + 1) / gridSize);
+            const height = Math.floor((endY - startY + 1) / gridSize);
+            const matrix = { include: [] };
+            
+            for(let i=0; i<gridSize; i++) {
+              for(let j=0; j<gridSize; j++) {
+                const sx = startX + (i * width);
+                const sy = startY + (j * height);
+                const ex = (i === gridSize - 1) ? endX : sx + width - 1;
+                const ey = (j === gridSize - 1) ? endY : sy + height - 1;
+                
+                matrix.include.push({
+                  start_x: sx.toString(),
+                  start_y: sy.toString(),
+                  end_x: ex.toString(),
+                  end_y: ey.toString(),
+                  zone: `Sector-${i}-${j}`
+                });
+              }
+            }
+            console.log(`matrix=${JSON.stringify(matrix)}`);
+          ' >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    
+    name: Scan ${{ matrix.zone }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      # Restore the state from the previous run
+      - name: Restore State Cache
+        uses: actions/cache/restore@v4
+        id: cache-restore
+        with:
+          path: state-${{ matrix.zone }}.json
+          key: state-v1-${{ matrix.zone }}-${{ github.run_id }}
+          restore-keys: |
+            state-v1-${{ matrix.zone }}-
+
+      - name: Execute Scraper
+        env:
+          START_X: ${{ matrix.start_x }}
+          START_Y: ${{ matrix.start_y }}
+          END_X: ${{ matrix.end_x }}
+          END_Y: ${{ matrix.end_y }}
+          ZONE_NAME: ${{ matrix.zone }}
+          RUN_DURATION_MINS: '10' # Safely stop at 5.5 hours
+          TARGET_INTERVAL: '500'
+          MIN_FLOOR: '399'
+        run: node scraper.js
+
+      # Save the state so the next workflow execution can pick it up
+      - name: Save State Cache
+        uses: actions/cache/save@v4
+        if: always() 
+        with:
+          path: state-${{ matrix.zone }}.json
+          key: state-v1-${{ matrix.zone }}-${{ github.run_id }}
+
+      # Upload the JSON file for download
+      - name: Upload Users JSON
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: users-${{ matrix.zone }}
+          path: users-${{ matrix.zone }}.json
+          retention-days: 60
