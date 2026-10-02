@@ -506,14 +506,20 @@ async function run() {
           scannedThisCycle++;
           consecutiveSuccesses++;
 
-          if (!discoveriesToFlush[sectorKey]) discoveriesToFlush[sectorKey] = { tx: tileX, ty: tileY, data: {} };
-          discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = { 
-            u: res.username, 
-            uid: res.uid,
-            aid: res.aid,
-            an: res.an,
-            c: currentColor,
-          };
+          // Skip storing empty pixels without an associated author
+          const isBlank = currentColor === -1;
+          const isUnknownAuthor = !res.uid && (res.username === 'Blank / Unknown' || !res.username);
+
+          if (!isBlank || !isUnknownAuthor) {
+            if (!discoveriesToFlush[sectorKey]) discoveriesToFlush[sectorKey] = { tx: tileX, ty: tileY, data: {} };
+            discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = { 
+              u: res.username, 
+              uid: res.uid,
+              aid: res.aid,
+              an: res.an,
+              c: currentColor,
+            };
+          }
 
           if (EXPANSION_ALGORITHM) await checkNeighbors(x, y, pngMap, cloudCache);
 
