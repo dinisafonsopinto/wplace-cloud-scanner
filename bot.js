@@ -61,17 +61,24 @@ function getCoords(absX, absY) {
 
 let colorIdMap = {};
 
-async function fetchColorsMap() {
-  try {
-    const res = await fetch(`${WORKER_URL}/colors?source=bot`, {
-      signal: AbortSignal.timeout(15000)
-    });
-    if (res.ok) {
-      colorIdMap = await res.json();
-      log(`Loaded ${Object.keys(colorIdMap).length} colors into mapping.`);
+async function fetchColorsMap(retries = 10) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(`${WORKER_URL}/colors?source=bot`, {
+        signal: AbortSignal.timeout(15000)
+      });
+      if (res.ok) {
+        colorIdMap = await res.json();
+        log(`Loaded ${Object.keys(colorIdMap).length} colors into mapping.`);
+        return;
+      }
+    } catch (err) {
+      log(`Failed to fetch colors map: ${err.message}`, 'warn');
     }
-  } catch (err) {
-    log(`Failed to fetch colors map: ${err.message}`, 'warn');
+
+    const waitTime = 3000 + Math.pow(1.3, i) * 1000;
+    await wait(waitTime, shutdownController.signal);
+    log(`Retrying colors map fetch in ${waitTime / 1000} seconds...`);
   }
 }
 
@@ -92,7 +99,7 @@ const wait = (ms, signal = null) => new Promise((resolve) => {
   if (signal) signal.addEventListener('abort', onAbort, { once: true });
 });
 
-async function fetchBackendTile(tileX, tileY, retries = 3) {
+async function fetchBackendTile(tileX, tileY, retries = 10) {
   const cacheBuster = Date.now();
   const url = `${WORKER_URL}/tile/${tileX}/${tileY}?t=${cacheBuster}&source=bot`;
   
@@ -129,7 +136,8 @@ async function fetchBackendTile(tileX, tileY, retries = 3) {
     }
     
     if (isShuttingDown) return null;
-    await wait(3000, shutdownController.signal);
+    const waitTime = 3000 + Math.pow(1.3, i) * 1000;
+    await wait(waitTime, shutdownController.signal);
   }
   
   throw new Error(`Critical: Failed to load D1 cache for (${tileX}, ${tileY}) after ${retries} attempts.`);
@@ -184,19 +192,29 @@ async function syncBackendTile(tileX, tileY, batchMap, signal = null) {
   return allSuccessful;
 }
 
-async function fetchTileImageData(tileX, tileY) {
-  const cacheBuster = Date.now();
-  const url = `https://backend.wplace.live/files/s0/tiles/${tileX}/${tileY}.png?t=${cacheBuster}`;
-  const res = await fetch(url, {
-    cache: 'no-store',
-    signal: AbortSignal.any([
-      AbortSignal.timeout(30000), 
-      shutdownController.signal
-    ]),
-  });
-  if (!res.ok) throw new Error(`Tile HTTP ${res.status}`);
-  const arrayBuffer = await res.arrayBuffer();
-  return PNG.sync.read(Buffer.from(arrayBuffer));
+async function fetchTileImageData(tileX, tileY, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const cacheBuster = Date.now();
+      const url = `https://backend.wplace.live/files/s0/tiles/${tileX}/${tileY}.png?t=${cacheBuster}`;
+      const res = await fetch(url, {
+        cache: 'no-store',
+        signal: AbortSignal.any([
+          AbortSignal.timeout(30000), 
+          shutdownController.signal
+        ]),
+      });
+      if (!res.ok) throw new Error(`Tile HTTP ${res.status}`);
+      const arrayBuffer = await res.arrayBuffer();
+      return PNG.sync.read(Buffer.from(arrayBuffer));
+    } catch (err) {
+      log(`Error fetching tile (${tileX}, ${tileY}): ${err.message}`, 'warn');
+    }
+    
+    if (isShuttingDown) return null;
+    const waitTime = 3000 + Math.pow(1.3, i) * 1000;
+    await wait(waitTime, shutdownController.signal);
+  }
 }
 
 function getTilePixelColor(png, pixelX, pixelY) {
@@ -369,8 +387,9 @@ async function run() {
       catch (err) { log(`Could not load PNG for (${tx}, ${ty}): ${err.message}`, 'warn'); }
     }
 
-    const pendingTasks = [];
     let instantMatches = 0;
+    const coloredTasks = [];
+    const blankTasks = [];
     const perimeterSeeds = [];
 
     for (let y = minY; y <= maxY; y++) {
@@ -388,10 +407,32 @@ async function run() {
             perimeterSeeds.push({ x, y });
           }
         } else {
-          pendingTasks.push({ x, y, tileX, tileY, pixelX, pixelY, currentColor });
+          const task = { x, y, tileX, tileY, pixelX, pixelY, currentColor };
+          
+          if (currentColor !== -1 && currentColor !== null) {
+            coloredTasks.push(task);
+          } else {
+            blankTasks.push(task);
+          }
         }
       }
     }
+
+    // Lightweight in-place shuffle (Fisher-Yates) to prevent heavy processing overhead
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    // 2) Randomize the initial queues to ensure the scanner doesn't always start top-left
+    shuffleArray(coloredTasks);
+    shuffleArray(blankTasks);
+    shuffleArray(perimeterSeeds);
+
+    const pendingTasks = [...coloredTasks, ...blankTasks];
 
     log(`Diff Summary: ${instantMatches} static pixels resolved. ${pendingTasks.length} pending queries.`, 'success');
     
