@@ -59,6 +59,22 @@ function getCoords(absX, absY) {
   };
 }
 
+let colorIdMap = {};
+
+async function fetchColorsMap() {
+  try {
+    const res = await fetch(`${WORKER_URL}/colors?source=bot`, {
+      signal: AbortSignal.timeout(15000)
+    });
+    if (res.ok) {
+      colorIdMap = await res.json();
+      log(`Loaded ${Object.keys(colorIdMap).length} colors into mapping.`);
+    }
+  } catch (err) {
+    log(`Failed to fetch colors map: ${err.message}`, 'warn');
+  }
+}
+
 const wait = (ms, signal = null) => new Promise((resolve) => {
   if (signal?.aborted) return resolve();
 
@@ -91,7 +107,21 @@ async function fetchBackendTile(tileX, tileY, retries = 3) {
       });
       
       if (res.ok) {
-        return await res.json();
+        const rawData = await res.json();
+        const translated = {};
+        
+        for (const [key, val] of Object.entries(rawData)) {
+          if (Array.isArray(val)) {
+            const rawC = val[1];
+            // Map the ID back to the 24-bit integer, leaving -1 (transparent) alone
+            const actualColor = (rawC !== -1 && colorIdMap[rawC] !== undefined) ? colorIdMap[rawC] : rawC;
+            translated[key] = { c: actualColor };
+          } else {
+            // Fallback for older unmigrated data
+            translated[key] = val; 
+          }
+        }
+        return translated;
       }
       log(`Failed to fetch cache for sector (${tileX}, ${tileY}): HTTP ${res.status}. Retrying...`, 'warn');
     } catch (err) {
@@ -102,7 +132,6 @@ async function fetchBackendTile(tileX, tileY, retries = 3) {
     await wait(3000, shutdownController.signal);
   }
   
-  // Throwing prevents the loop from proceeding with a false-empty cache
   throw new Error(`Critical: Failed to load D1 cache for (${tileX}, ${tileY}) after ${retries} attempts.`);
 }
 
@@ -210,6 +239,8 @@ async function run() {
   const maxY = Math.max(START_Y, END_Y);
   const totalPixels = (maxX - minX + 1) * (maxY - minY + 1);
   const runStartTime = Date.now();
+
+  await fetchColorsMap();
 
   const minTileX = Math.floor(minX / TILE_SIZE), maxTileX = Math.floor(maxX / TILE_SIZE);
   const minTileY = Math.floor(minY / TILE_SIZE), maxTileY = Math.floor(maxY / TILE_SIZE);
