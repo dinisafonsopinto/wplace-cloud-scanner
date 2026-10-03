@@ -99,7 +99,7 @@ jobs:
           RUN_DURATION_MINS: '20'
           TARGET_INTERVAL: '500'
           MIN_FLOOR: '399'
-        run: node scraper.js
+        run: node users.js
 
       - name: Upload Local Results
         uses: actions/upload-artifact@v4
