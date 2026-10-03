@@ -94,7 +94,7 @@ async function fetchPixelOfficial(tileX, tileY, pixelX, pixelY) {
       return { 
         success: true, 
         username: data?.paintedBy?.name || 'Blank / Unknown',
-        discord: data?.paintedBy?.id || null,
+        discord: data?.paintedBy?.discord || null,
         allianceName: data?.paintedBy?.allianceName || null
       };
     }
