@@ -332,11 +332,8 @@ async function run() {
       const png = tileDataMap.get(tileKey);
       const neighborColor = getTilePixelColor(png, coords.pixelX, coords.pixelY);
 
-      // Stop expanding if the pixel is empty/transparent (-1)
-      if (neighborColor === -1) continue;
-
-      // const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
-      // if (cachedPixel && cachedPixel.c === neighborColor) continue;
+      const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
+      if (cachedPixel && cachedPixel.c === neighborColor) continue;
 
       visitedPixels.add(key);
       const taskObj = {
