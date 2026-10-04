@@ -333,7 +333,8 @@ async function run() {
       const neighborColor = getTilePixelColor(png, coords.pixelX, coords.pixelY);
 
       const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
-      if (cachedPixel && cachedPixel.c === neighborColor) continue;
+      const cachedColor = (cachedPixel && cachedPixel.c !== null && cachedPixel.c !== undefined) ? cachedPixel.c : -1;
+      if (cachedColor === neighborColor) continue;
 
       visitedPixels.add(key);
       const taskObj = {
