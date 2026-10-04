@@ -389,6 +389,7 @@ async function run() {
 
     let instantMatches = 0;
     const coloredTasks = [];
+    const erasedTasks = [];
     const blankTasks = [];
     const perimeterSeeds = [];
 
@@ -412,7 +413,10 @@ async function run() {
           if (currentColor !== -1 && currentColor !== null) {
             coloredTasks.push(task);
           } else {
-            blankTasks.push(task);
+            if (cached && cached.c !== null && cached.c !== -1)
+              erasedTasks.push(task);
+            else
+              blankTasks.push(task);
           }
         }
       }
@@ -429,10 +433,11 @@ async function run() {
 
     // 2) Randomize the initial queues to ensure the scanner doesn't always start top-left
     shuffleArray(coloredTasks);
+    shuffleArray(erasedTasks);
     shuffleArray(blankTasks);
     shuffleArray(perimeterSeeds);
 
-    const pendingTasks = [...coloredTasks, ...blankTasks];
+    const pendingTasks = [...coloredTasks, ...erasedTasks, ...blankTasks];
 
     log(`Diff Summary: ${instantMatches} static pixels resolved. ${pendingTasks.length} pending queries.`, 'success');
     
