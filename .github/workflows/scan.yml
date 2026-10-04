@@ -107,8 +107,8 @@ jobs:
             const startY = parseInt(process.env.START_Y, 10);
             const endX = parseInt(process.env.END_X, 10);
             const endY = parseInt(process.env.END_Y, 10);
-            const horizontalDivisions = parseInt(process.env.HORIZONTAL_DIVISIONS, 10);
-            const verticalDivisions = parseInt(process.env.VERTICAL_DIVISIONS, 10);
+            const horizontal_divisions = parseInt(process.env.HORIZONTAL_DIVISIONS, 10);
+            const vertical_divisions = parseInt(process.env.VERTICAL_DIVISIONS, 10);
 
             const width = Math.floor((endX - startX + 1) / horizontal_divisions);
             const height = Math.floor((endY - startY + 1) / vertical_divisions);
