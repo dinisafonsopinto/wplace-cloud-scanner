@@ -559,13 +559,12 @@ async function run() {
       }
 
       let resolved = false;
+      lastRequestStart = Date.now();
 
       while (!resolved && !isShuttingDown) {
         const reqStart = Date.now();
 
-        const actualCadence = lastRequestStart === null
-          ? null
-          : reqStart - lastRequestStart;
+        const actualCadence = reqStart - lastRequestStart;
         
         lastRequestStart = reqStart;
         

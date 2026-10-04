@@ -22,8 +22,13 @@ on:
         description: 'End Y (Blank = use saved Target)'
         required: false
         type: string
-      grid_size:
-        description: 'Grid divisions (e.g., 2 creates a 2x2 grid with 4 runners)'
+      horizontal_divisions:
+        description: 'Horizontal divisions'
+        required: true
+        default: '2'
+        type: string
+      vertical_divisions: 
+        description: 'Vertical divisions'
         required: true
         default: '2'
         type: string
@@ -94,27 +99,29 @@ jobs:
           START_Y: ${{ vars.TARGET_START_Y }}
           END_X: ${{ vars.TARGET_END_X }}
           END_Y: ${{ vars.TARGET_END_Y }}
-          GRID_SIZE: ${{ inputs.grid_size || vars.GRID_SIZE || '2' }}
+          HORIZONTAL_DIVISIONS: ${{ inputs.horizontal_divisions || vars.HORIZONTAL_DIVISIONS || '2' }}
+          VERTICAL_DIVISIONS: ${{ inputs.vertical_divisions || vars.VERTICAL_DIVISIONS || '2' }}
         run: |
           node -e '
             const startX = parseInt(process.env.START_X, 10);
             const startY = parseInt(process.env.START_Y, 10);
             const endX = parseInt(process.env.END_X, 10);
             const endY = parseInt(process.env.END_Y, 10);
-            const gridSize = parseInt(process.env.GRID_SIZE, 10);
+            const horizontalDivisions = parseInt(process.env.HORIZONTAL_DIVISIONS, 10);
+            const verticalDivisions = parseInt(process.env.VERTICAL_DIVISIONS, 10);
 
-            const width = Math.floor((endX - startX + 1) / gridSize);
-            const height = Math.floor((endY - startY + 1) / gridSize);
+            const width = Math.floor((endX - startX + 1) / horizontal_divisions);
+            const height = Math.floor((endY - startY + 1) / vertical_divisions);
             const matrix = { include: [] };
             
             let jobIndex = 0; // Initialize a counter for the jobs
 
-            for(let i=0; i<gridSize; i++) {
-              for(let j=0; j<gridSize; j++) {
+            for(let i=0; i<horizontal_divisions; i++) {
+              for(let j=0; j<vertical_divisions; j++) {
                 const sx = startX + (i * width);
                 const sy = startY + (j * height);
-                const ex = (i === gridSize - 1) ? endX : sx + width - 1;
-                const ey = (j === gridSize - 1) ? endY : sy + height - 1;
+                const ex = (i === horizontal_divisions - 1) ? endX : sx + width - 1;
+                const ey = (j === vertical_divisions - 1) ? endY : sy + height - 1;
                 
                 matrix.include.push({
                   start_x: sx.toString(),
