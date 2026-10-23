@@ -30,6 +30,7 @@ const CFG_PENALTY_MS_429 = parseEnvInt(process.env.PENALTY_MS_429, 500);
 const CFG_STEP_DOWN_MS = parseEnvInt(process.env.STEP_DOWN_MS, 21);
 const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
 const FLUSH_INTERVAL = parseEnvInt(process.env.FLUSH_INTERVAL, 1000); // Auto-save every 200 pixels
+const FLUSH_MINIMUM = parseEnvInt(process.env.FLUSH_MINIMUM, 50);
 
 const EXPANSION_ALGORITHM = process.env.EXPANSION_ALGORITHM === 'true';
 const LIMIT_EXPANSION = process.env.LIMIT_EXPANSION === 'true'; // limits the expansion to the tiles already affected by the scan
@@ -370,6 +371,7 @@ async function run() {
     log(`Expansion rate: ${EXPANSION_RATE}`);
     log('\n');
     const cycleStartTime = Date.now();
+    const cycleFlushedPixels = 0;
 
     const intersectingTiles = [];
     for (let ty = minTileY; ty <= maxTileY; ty++) {
@@ -478,6 +480,7 @@ async function run() {
 
       if (flushCount > 0) {
         log(`Flushed ${flushCount} pixels to D1.`, 'success');
+        cycleFlushedPixels += flushCount;
 
         // Mid-scan cache update: Fetch all intersecting tiles to catch userscript discoveries.
         // Skip this during shutdown — it's not needed before exit and eats into the ~10s
@@ -667,8 +670,13 @@ async function run() {
     await flushToD1(isShuttingDown ? { signal: AbortSignal.timeout(6000) } : {}, false);
 
     if (cycle < TOTAL_CYCLES && !isShuttingDown) {
-      log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);
-      await wait(PAUSE_INTERVAL_MS, shutdownController.signal);
+      if (cycleFlushedPixels < FLUSH_MINIMUM * (CYCLE_DURATION_MS / 1000 / 60)) { // if pixels flushed per minute is less than FLUSH_MINIMUM per minute, exit early
+        log(`Less than 5 pixels flushed per minute. Exiting early...`, 'success');
+        isShuttingDown = true;
+      } else {
+        log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);
+        await wait(PAUSE_INTERVAL_MS, shutdownController.signal);
+      }
     }
   }
 

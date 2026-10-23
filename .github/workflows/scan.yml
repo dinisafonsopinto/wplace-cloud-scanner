@@ -73,6 +73,10 @@ on:
         description: 'Pause between Cycles (s)'
         required: false
         type: string
+      flush_minimum:
+        description: 'Flush Minimum (px/min)'
+        required: false
+        type: string
       expansion_algorithm:
         description: 'Use expansion algortihm?'
         required: true
@@ -191,6 +195,7 @@ jobs:
           RUN_DURATION_MINS: ${{ inputs.run_duration_mins != '' && inputs.run_duration_mins || vars.RUN_DURATION_MINS || '67'}}
           PAUSE_INTERVAL_SECS: ${{ inputs.pause_interval_secs != '' && inputs.pause_interval_secs || vars.PAUSE_INTERVAL_SECS || '3' }}
           TOTAL_CYCLES: ${{ inputs.total_cycles != '' && inputs.total_cycles || vars.TOTAL_CYCLES || '1' }}
+          FLUSH_MINIMUM: ${{ inputs.flush_minimum != '' && inputs.flush_minimum || vars.FLUSH_MINIMUM || '1' }}
           TARGET_INTERVAL: ${{ inputs.target_interval != '' && inputs.target_interval || vars.TARGET_INTERVAL || '500' }}
           MIN_FLOOR: ${{ inputs.min_floor != '' && inputs.min_floor || vars.MIN_FLOOR || '399' }}
           PAUSE_SEC_429: ${{ inputs.pause_sec_429 != '' && inputs.pause_sec_429 || vars.PAUSE_SEC_429 || '321' }}
