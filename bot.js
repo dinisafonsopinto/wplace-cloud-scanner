@@ -587,8 +587,9 @@ async function run() {
           const isBlank = currentColor === -1;
           const isUnknownAuthor = !res.uid && (res.username === 'Blank / Unknown' || !res.username);
 
+          if (!discoveriesToFlush[sectorKey]) discoveriesToFlush[sectorKey] = { tx: tileX, ty: tileY, data: {} };
+
           if (!isBlank || !isUnknownAuthor) {
-            if (!discoveriesToFlush[sectorKey]) discoveriesToFlush[sectorKey] = { tx: tileX, ty: tileY, data: {} };
             discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = { 
               u: res.username, 
               uid: res.uid,
@@ -596,6 +597,8 @@ async function run() {
               an: res.an,
               c: currentColor,
             };
+          } else {
+            discoveriesToFlush[sectorKey].data[`${pixelX}_${pixelY}`] = { u: 'Blank / Unknown', c: currentColor };
           }
 
           if (EXPANSION_ALGORITHM) await checkNeighbors(x, y, pngMap, cloudCache);
