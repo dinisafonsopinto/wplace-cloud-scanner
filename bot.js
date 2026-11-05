@@ -371,7 +371,7 @@ async function run() {
     log(`Expansion rate: ${EXPANSION_RATE}`);
     log('\n');
     const cycleStartTime = Date.now();
-    const cycleFlushedPixels = 0;
+    let cycleFlushedPixels = 0;
 
     const intersectingTiles = [];
     for (let ty = minTileY; ty <= maxTileY; ty++) {
