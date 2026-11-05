@@ -99,10 +99,10 @@ jobs:
       - name: Calculate Grid Coordinates
         id: generate-matrix
         env:
-          START_X: ${{ vars.TARGET_START_X }}
-          START_Y: ${{ vars.TARGET_START_Y }}
-          END_X: ${{ vars.TARGET_END_X }}
-          END_Y: ${{ vars.TARGET_END_Y }}
+          START_X: ${{ inputs.start_x != '' && inputs.start_x || vars.TARGET_START_X }}
+          START_Y: ${{ inputs.start_y != '' && inputs.start_y || vars.TARGET_START_Y }}
+          END_X: ${{ inputs.end_x != '' && inputs.end_x || vars.TARGET_END_X }}
+          END_Y: ${{ inputs.end_y != '' && inputs.end_y || vars.TARGET_END_Y }}
           HORIZONTAL_DIVISIONS: ${{ inputs.horizontal_divisions || vars.HORIZONTAL_DIVISIONS || '2' }}
           VERTICAL_DIVISIONS: ${{ inputs.vertical_divisions || vars.VERTICAL_DIVISIONS || '2' }}
         run: |
