@@ -23,12 +23,12 @@ on:
         required: false
         type: string
       horizontal_divisions:
-        description: 'Horizontal divisions'
+        description: 'Column Amount'
         required: true
         default: '2'
         type: string
       vertical_divisions: 
-        description: 'Vertical divisions'
+        description: 'Row Amount'
         required: true
         default: '2'
         type: string
@@ -122,6 +122,7 @@ jobs:
             if (isNaN(startX) || isNaN(startY) || isNaN(endX) || isNaN(endY)) {
               try {
                 const zones = JSON.parse(process.env.TARGET_ZONES);
+                const runNumber = parseInt(process.env.RUN_NUMBER, 10);
                 const selectedZone = zones[runNumber % zones.length];
                 
                 startX = selectedZone.sx;
