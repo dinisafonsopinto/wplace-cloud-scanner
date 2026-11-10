@@ -95,22 +95,47 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      global_start_x: ${{ steps.generate-matrix.outputs.global_start_x }}
+      global_start_y: ${{ steps.generate-matrix.outputs.global_start_y }}
+      global_end_x: ${{ steps.generate-matrix.outputs.global_end_x }}
+      global_end_y: ${{ steps.generate-matrix.outputs.global_end_y }}
     steps:
       - name: Calculate Grid Coordinates
         id: generate-matrix
         env:
-          START_X: ${{ inputs.start_x != '' && inputs.start_x || vars.TARGET_START_X }}
-          START_Y: ${{ inputs.start_y != '' && inputs.start_y || vars.TARGET_START_Y }}
-          END_X: ${{ inputs.end_x != '' && inputs.end_x || vars.TARGET_END_X }}
-          END_Y: ${{ inputs.end_y != '' && inputs.end_y || vars.TARGET_END_Y }}
+          INPUT_START_X: ${{ inputs.start_x }}
+          INPUT_START_Y: ${{ inputs.start_y }}
+          INPUT_END_X: ${{ inputs.end_x }}
+          INPUT_END_Y: ${{ inputs.end_y }}
+          TARGET_ZONES: ${{ vars.TARGET_ZONES }}
+          RUN_NUMBER: ${{ github.run_number }}
           HORIZONTAL_DIVISIONS: ${{ inputs.horizontal_divisions || vars.HORIZONTAL_DIVISIONS || '2' }}
           VERTICAL_DIVISIONS: ${{ inputs.vertical_divisions || vars.VERTICAL_DIVISIONS || '2' }}
         run: |
           node -e '
-            const startX = parseInt(process.env.START_X, 10);
-            const startY = parseInt(process.env.START_Y, 10);
-            const endX = parseInt(process.env.END_X, 10);
-            const endY = parseInt(process.env.END_Y, 10);
+            let startX = parseInt(process.env.INPUT_START_X, 10);
+            let startY = parseInt(process.env.INPUT_START_Y, 10);
+            let endX = parseInt(process.env.INPUT_END_X, 10);
+            let endY = parseInt(process.env.INPUT_END_Y, 10);
+
+            // If manual inputs are empty (e.g., a scheduled run), pick a random zone from vars.TARGET_ZONES
+            if (isNaN(startX) || isNaN(startY) || isNaN(endX) || isNaN(endY)) {
+              try {
+                const zones = JSON.parse(process.env.TARGET_ZONES);
+                const selectedZone = zones[runNumber % zones.length];
+                
+                startX = selectedZone.sx;
+                startY = selectedZone.sy;
+                endX = selectedZone.ex;
+                endY = selectedZone.ey;
+                
+                console.log(`Scheduled run detected. Selected zone from vars: [${startX}, ${startY}] to [${endX}, ${endY}]`);
+              } catch (e) {
+                console.error("Error parsing TARGET_ZONES. Ensure it is a valid JSON array.");
+                process.exit(1);
+              }
+            }
+
             const horizontal_divisions = parseInt(process.env.HORIZONTAL_DIVISIONS, 10);
             const vertical_divisions = parseInt(process.env.VERTICAL_DIVISIONS, 10);
 
@@ -138,7 +163,12 @@ jobs:
                 jobIndex++;
               }
             }
+
             console.log(`matrix=${JSON.stringify(matrix)}`);
+            console.log(`global_start_x=${startX}`);
+            console.log(`global_start_y=${startY}`);
+            console.log(`global_end_x=${endX}`);
+            console.log(`global_end_y=${endY}`);
           ' >> "$GITHUB_OUTPUT"
 
   scan:
@@ -184,13 +214,13 @@ jobs:
           END_X: ${{ matrix.end_x }}
           END_Y: ${{ matrix.end_y }}
 
-          GLOBAL_MIN_X: ${{ inputs.start_x != '' && inputs.start_x || vars.TARGET_START_X }}
-          GLOBAL_MAX_X: ${{ inputs.end_x != '' && inputs.end_x || vars.TARGET_END_X }}
-          GLOBAL_MIN_Y: ${{ inputs.start_y != '' && inputs.start_y || vars.TARGET_START_Y }}
-          GLOBAL_MAX_Y: ${{ inputs.end_y != '' && inputs.end_y || vars.TARGET_END_Y }}
+          GLOBAL_MIN_X: ${{ needs.setup.outputs.global_start_x }}
+          GLOBAL_MAX_X: ${{ needs.setup.outputs.global_end_x }}
+          GLOBAL_MIN_Y: ${{ needs.setup.outputs.global_start_y }}
+          GLOBAL_MAX_Y: ${{ needs.setup.outputs.global_end_y }}
 
-          EXPANSION_ALGORITHM: ${{ inputs.expansion_algorithm != '' && inputs.expansion_algorithm || vars.EXPANSION_ALGORITHM }}
-          LIMIT_EXPANSION: ${{ inputs.limit_expansion != '' && inputs.limit_expansion || vars.LIMIT_EXPANSION }}
+          EXPANSION_ALGORITHM: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.expansion_algorithm) || vars.EXPANSION_ALGORITHM }}
+          LIMIT_EXPANSION: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.limit_expansion) || vars.LIMIT_EXPANSION }}
 
           RUN_DURATION_MINS: ${{ inputs.run_duration_mins != '' && inputs.run_duration_mins || vars.RUN_DURATION_MINS || '67'}}
           PAUSE_INTERVAL_SECS: ${{ inputs.pause_interval_secs != '' && inputs.pause_interval_secs || vars.PAUSE_INTERVAL_SECS || '3' }}
