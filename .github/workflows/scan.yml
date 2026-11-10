@@ -113,6 +113,9 @@ jobs:
           VERTICAL_DIVISIONS: ${{ inputs.vertical_divisions || vars.VERTICAL_DIVISIONS || '2' }}
         run: |
           node -e '
+            const fs = require("fs");
+            const githubOutput = process.env.GITHUB_OUTPUT;
+
             let startX = parseInt(process.env.INPUT_START_X, 10);
             let startY = parseInt(process.env.INPUT_START_Y, 10);
             let endX = parseInt(process.env.INPUT_END_X, 10);
@@ -130,13 +133,11 @@ jobs:
                 endX = selectedZone.ex;
                 endY = selectedZone.ey;
                 
-                console.log(`scheduled=true`);
+                console.log(`Scheduled run detected.`);
               } catch (e) {
-                console.error("Error parsing TARGET_ZONES. Ensure it is a valid JSON array.");
+                console.error(`Error in fallback logic: ${e.message}`);
                 process.exit(1);
               }
-            } else {
-              console.log(`scheduled=false`);
             }
 
             const horizontal_divisions = parseInt(process.env.HORIZONTAL_DIVISIONS, 10);
@@ -167,12 +168,13 @@ jobs:
               }
             }
 
-            console.log(`matrix=${JSON.stringify(matrix)}`);
-            console.log(`global_start_x=${startX}`);
-            console.log(`global_start_y=${startY}`);
-            console.log(`global_end_x=${endX}`);
-            console.log(`global_end_y=${endY}`);
-          ' >> "$GITHUB_OUTPUT"
+            // Write ONLY the variables to the GitHub Output file
+            fs.appendFileSync(githubOutput, `matrix=${JSON.stringify(matrix)}\n`);
+            fs.appendFileSync(githubOutput, `global_start_x=${startX}\n`);
+            fs.appendFileSync(githubOutput, `global_start_y=${startY}\n`);
+            fs.appendFileSync(githubOutput, `global_end_x=${endX}\n`);
+            fs.appendFileSync(githubOutput, `global_end_y=${endY}\n`);
+          '
 
   scan:
     needs: setup
