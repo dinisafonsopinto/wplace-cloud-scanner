@@ -130,11 +130,13 @@ jobs:
                 endX = selectedZone.ex;
                 endY = selectedZone.ey;
                 
-                console.log(`Scheduled run detected. Selected zone from vars: [${startX}, ${startY}] to [${endX}, ${endY}]`);
+                console.log(`scheduled=true`);
               } catch (e) {
                 console.error("Error parsing TARGET_ZONES. Ensure it is a valid JSON array.");
                 process.exit(1);
               }
+            } else {
+              console.log(`scheduled=false`);
             }
 
             const horizontal_divisions = parseInt(process.env.HORIZONTAL_DIVISIONS, 10);
