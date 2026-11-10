@@ -1,9 +1,6 @@
 name: Wplace Background Scanner
 
 on:
-  schedule:
-    - cron: '49 */6 * * *'
-
   workflow_dispatch:
     inputs:
       start_x:
