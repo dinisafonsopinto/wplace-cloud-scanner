@@ -29,8 +29,8 @@ const CFG_PAUSE_SEC_429 = parseEnvInt(process.env.PAUSE_SEC_429, 321);
 const CFG_PENALTY_MS_429 = parseEnvInt(process.env.PENALTY_MS_429, 500);
 const CFG_STEP_DOWN_MS = parseEnvInt(process.env.STEP_DOWN_MS, 21);
 const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
-const FLUSH_INTERVAL = parseEnvInt(process.env.FLUSH_INTERVAL, 1000); // Auto-save every 200 pixels
-const FLUSH_MINIMUM = parseEnvInt(process.env.FLUSH_MINIMUM, 50);
+const FLUSH_INTERVAL = parseEnvInt(process.env.FLUSH_INTERVAL, 1000);
+const FLUSH_MINIMUM = parseEnvInt(process.env.FLUSH_MINIMUM, 0.02);
 
 const EXPANSION_ALGORITHM = process.env.EXPANSION_ALGORITHM === 'true';
 const LIMIT_EXPANSION = process.env.LIMIT_EXPANSION === 'true'; // limits the expansion to the tiles already affected by the scan
@@ -757,8 +757,8 @@ async function run() {
             if (taskIndex > nonBlankCount && pendingTasks.length > taskIndex) { // if taskIndex is well into the blank part of the queue
               const discoveryRate = cycleFlushedPixels / scannedThisCycle;
               
-              // If less than 2% of our scanned pixels are useful, clear the rest of the blanks
-              if (discoveryRate < 0.02) { 
+              // If less than FLUSH_MINIMUM% of our scanned pixels are useful, clear the rest of the blanks
+              if (discoveryRate < FLUSH_MINIMUM) { 
                 const removedCount = pendingTasks.length - taskIndex;
                 log(`Discovery rate dropped to ${(discoveryRate * 100).toFixed(1)}%. Clearing ${removedCount} useless blank pixels from the queue.`);
                 
