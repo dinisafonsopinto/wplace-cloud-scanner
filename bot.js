@@ -41,6 +41,7 @@ const LOG_INTERVAL = 200; // Log every 200 pixels
 
 // Global Shutdown Flag
 let isShuttingDown = false;
+let isGracefulKill = false;
 const shutdownController = new AbortController();
 
 function log(msg, type = 'info') {
@@ -248,6 +249,56 @@ async function fetchPixelOfficial(tileX, tileY, pixelX, pixelY) {
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') return { success: false, status: 408 };
     return { success: false, status: 0 };
+  }
+}
+
+async function checkKillSwitch() {
+  if (!process.env.GH_PAT || !process.env.REPO) return false;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${process.env.REPO}/actions/variables/KILL_SWITCH`, {
+      headers: {
+        'Authorization': `Bearer ${process.env.GH_PAT}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.value === 'true';
+    }
+  } catch (err) {
+    // Ignore network blips during polling
+  }
+  return false;
+}
+
+async function resetKillSwitch() {
+  if (!process.env.GH_PAT || !process.env.REPO) return;
+  try {
+    log('Resetting remote KILL_SWITCH to false...');
+    const res = await fetch(`https://api.github.com/repos/${process.env.REPO}/actions/variables/KILL_SWITCH`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${process.env.GH_PAT}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: 'KILL_SWITCH',
+        value: 'false'
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+    
+    if (res.ok) {
+      log('Successfully reset KILL_SWITCH to false.', 'success');
+    } else {
+      log(`Failed to reset KILL_SWITCH: HTTP ${res.status}`, 'warn');
+    }
+  } catch (err) {
+    log(`Error resetting KILL_SWITCH: ${err.message}`, 'warn');
   }
 }
 
@@ -503,6 +554,61 @@ async function run() {
       discoveriesToFlush = remaining; // only clear sectors that actually synced
     };
 
+    const activeFlushQueue = []; 
+    const flushingSectors = new Set();
+    let backgroundFlusherRunning = false;
+
+    async function processFlushQueue() {
+      if (backgroundFlusherRunning) return;
+      backgroundFlusherRunning = true;
+      
+      while (activeFlushQueue.length > 0) {
+        const sectorKey = activeFlushQueue.shift();
+        const sectorData = discoveriesToFlush[sectorKey];
+
+        // If empty or undefined, remove the lock and skip
+        if (!sectorData || Object.keys(sectorData.data).length === 0) {
+          flushingSectors.delete(sectorKey);
+          continue;
+        }
+
+        const keysCount = Object.keys(sectorData.data).length;
+        log(`[Queue] Flushing sector ${sectorKey} (${keysCount} px)...`);
+        
+        let success = false;
+        try {
+           success = await syncBackendTile(sectorData.tx, sectorData.ty, sectorData.data);
+        } catch (err) {
+           success = false;
+        }
+
+        if (success) {
+           cycleFlushedPixels += keysCount;
+           delete discoveriesToFlush[sectorKey];
+           flushingSectors.delete(sectorKey); // Unlock the tile for the scanner
+           log(`[Queue] Sector ${sectorKey} flushed successfully. Waiting 1s...`, 'success');
+           await wait(1000); // Wait 1 second before doing the next tile
+        } else {
+           log(`[Queue] Sector ${sectorKey} failed. Requeuing...`, 'warn');
+           activeFlushQueue.push(sectorKey);
+           await wait(3000); // 3-second penalty before retrying
+        }
+      }
+      backgroundFlusherRunning = false;
+    }
+
+    function triggerBackgroundFlush() {
+      for (const key of Object.keys(discoveriesToFlush)) {
+        if (!flushingSectors.has(key)) {
+           flushingSectors.add(key); // Lock the tile
+           activeFlushQueue.push(key);
+        }
+      }
+      if (activeFlushQueue.length > 0) processFlushQueue();
+    }
+    
+    let lastKillCheck = Date.now();
+
     let taskIndex = 0;
     let t1Idx = 0, t2Idx = 0, t3Idx = 0;
 
@@ -513,6 +619,20 @@ async function run() {
         && !isShuttingDown
     ) {
       const dateNow = Date.now();
+
+      // NON-BLOCKING 4-MINUTE POLLING
+      if (dateNow - lastKillCheck > 4 * 60 * 1000) { 
+        lastKillCheck = dateNow;
+        checkKillSwitch().then(shouldKill => {
+          if (shouldKill && !isShuttingDown) {
+             log('Remote KILL_SWITCH detected! Initiating graceful shutdown...', 'warn');
+             isGracefulKill = true;
+             isShuttingDown = true;
+             resetKillSwitch();
+          }
+        });
+      }
+
       if (isShuttingDown) {
         log(`Manual cancellation detected! Halting loop...`, 'warn');
         break; 
@@ -544,12 +664,20 @@ async function run() {
         else if (t3Idx < queueTier3.length) task = queueTier3[t3Idx++];
       }
 
-      const globalKey = `${task.x}_${task.y}`;
-      if (scannedPixels.has(globalKey)) continue;
-      scannedPixels.add(globalKey);
-
       const { x, y, tileX, tileY, pixelX, pixelY, currentColor } = task;
       const sectorKey = `${tileX}_${tileY}`;
+      const globalKey = `${x}_${y}`;
+      
+      if (scannedPixels.has(globalKey)) continue;
+
+      // IS TILE CURRENTLY FLUSHING?
+      if (flushingSectors.has(sectorKey)) {
+        pendingTasks.push(task); // Requeue to the back of the line
+        await wait(5); // Tiny throttle to prevent 0ms spinning if ALL tiles are locked
+        continue; 
+      }
+
+      scannedPixels.add(globalKey);
 
       // MID-SCAN CHECK
       const liveCache = cloudCache.get(sectorKey)?.[`${pixelX}_${pixelY}`];
@@ -611,7 +739,7 @@ async function run() {
           // Periodic Flush check
           if (scannedThisCycle % FLUSH_INTERVAL === 0) {
             log(`Checkpoint reached (${scannedThisCycle} pixels). Auto-saving...`);
-            await flushToD1();
+            triggerBackgroundFlush();
           }
 
           if (scannedThisCycle % LOG_INTERVAL === 0) {
@@ -638,7 +766,7 @@ async function run() {
           minFloor = Math.max(minFloor, targetInterval + Math.max(10, CFG_STEP_DOWN_MS));
           targetInterval += CFG_PENALTY_MS_429;
           log(`Rate limited! Learned floor: ${minFloor}ms. New target: ${targetInterval}ms. Pausing for ${CFG_PAUSE_SEC_429}s...`, 'warn');
-          await flushToD1();
+          triggerBackgroundFlush();
           await wait(CFG_PAUSE_SEC_429 * 1000, shutdownController.signal);
         } else if (res.status === 408) {
           log(`Connection Timeout. Retrying in 30s...`, 'warn');
@@ -649,7 +777,7 @@ async function run() {
 
           if (unsavedCount > 0.25 * FLUSH_INTERVAL) {
             log(`Too many unsaved pixels (${unsavedCount}). Flushing...`);
-            await flushToD1();
+            triggerBackgroundFlush();
           }
           await wait(30000, shutdownController.signal);
           log(`Retrying...`);
@@ -662,12 +790,25 @@ async function run() {
       }
     }
 
-    // Final end-of-cycle flush. On a normal cycle end this uses the default
-    // shutdown-aware signal. On a cancellation, shutdownController.signal is
-    // already aborted by now, so we give this call its own short-lived
-    // timeout instead — otherwise the "emergency" flush would fail instantly
-    // and every unsaved pixel from this cycle would be lost.
-    await flushToD1(isShuttingDown ? { signal: AbortSignal.timeout(6000) } : {}, false);
+    // Final end-of-cycle flush handling
+    if (isGracefulKill) {
+      log('Graceful shutdown initiated. Waiting for background flush queue to empty...');
+      triggerBackgroundFlush(); // push remaining tiles
+      while (backgroundFlusherRunning) {
+        await wait(3000);
+      }
+      log('All sectors gracefully flushed.', 'success');
+    } else if (isShuttingDown) {
+      // Manual GitHub UI Cancel button was clicked (Emergency 6-second timeout)
+      log('Emergency cancel detected. Attempting fast flush...');
+      await flushToD1({ signal: AbortSignal.timeout(6000) }, false);
+    } else {
+      // Normal cycle finished
+      triggerBackgroundFlush();
+      while (backgroundFlusherRunning) {
+        await wait(500);
+      }
+    }
 
     if (cycle < TOTAL_CYCLES && !isShuttingDown) {
       if (cycleFlushedPixels < FLUSH_MINIMUM * (CYCLE_DURATION_MS / 1000 / 60)) { // if pixels flushed per minute is less than FLUSH_MINIMUM per minute, exit early
