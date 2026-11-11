@@ -598,7 +598,7 @@ async function run() {
            cycleFlushedPixels += keysCount;
            delete discoveriesToFlush[sectorKey];
            flushingSectors.delete(sectorKey); // Unlock the tile for the scanner
-           log(`[Queue] Sector ${sectorKey} flushed successfully. Waiting 1s...`, 'success');
+           log(`[Queue] Sector ${sectorKey} flushed successfully (${keysCount} px). Waiting 1s...`, 'success');
            await wait(1000); // Wait 1 second before doing the next tile
         } else {
            log(`[Queue] Sector ${sectorKey} failed. Requeuing...`, 'warn');
@@ -752,6 +752,20 @@ async function run() {
           if (scannedThisCycle % FLUSH_INTERVAL === 0) {
             log(`Checkpoint reached (${scannedThisCycle} pixels). Auto-saving...`);
             triggerBackgroundFlush();
+
+            const nonBlankCount = coloredTasks.length + erasedTasks.length;
+            if (taskIndex > nonBlankCount && pendingTasks.length > taskIndex) { // if taskIndex is well into the blank part of the queue
+              const discoveryRate = cycleFlushedPixels / scannedThisCycle;
+              
+              // If less than 2% of our scanned pixels are useful, clear the rest of the blanks
+              if (discoveryRate < 0.02) { 
+                const removedCount = pendingTasks.length - taskIndex;
+                log(`Discovery rate dropped to ${(discoveryRate * 100).toFixed(1)}%. Clearing ${removedCount} useless blank pixels from the queue.`);
+                
+                // Truncate the queue. (Note: The expansion queues are untouched, so active blobs keep scanning!)
+                pendingTasks.length = taskIndex;
+              }
+            }
           }
 
           if (scannedThisCycle % LOG_INTERVAL === 0) {
@@ -823,13 +837,8 @@ async function run() {
     }
 
     if (cycle < TOTAL_CYCLES && !isShuttingDown) {
-      if (cycleFlushedPixels < FLUSH_MINIMUM * (CYCLE_DURATION_MS / 1000 / 60)) { // if pixels flushed per minute is less than FLUSH_MINIMUM per minute, exit early
-        log(`Less than 5 pixels flushed per minute. Exiting early...`, 'success');
-        isShuttingDown = true;
-      } else {
-        log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);
-        await wait(PAUSE_INTERVAL_MS, shutdownController.signal);
-      }
+      log(`Pausing for ${PAUSE_INTERVAL_MS / 60000}m before cycle ${cycle + 1}...`);
+      await wait(PAUSE_INTERVAL_MS, shutdownController.signal);
     }
   }
 
