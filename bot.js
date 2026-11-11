@@ -43,6 +43,8 @@ const LOG_INTERVAL = 200; // Log every 200 pixels
 let isShuttingDown = false;
 let isGracefulKill = false;
 const shutdownController = new AbortController();
+const isLeader = START_X === GLOBAL_MIN_X && START_Y === GLOBAL_MIN_Y;
+let leaderWaiting = false;
 
 function log(msg, type = 'info') {
   const ts = new Date().toISOString().substring(11, 19);
@@ -637,10 +639,19 @@ async function run() {
         lastKillCheck = dateNow;
         checkKillSwitch().then(shouldKill => {
           if (shouldKill && !isShuttingDown) {
-             log('Remote KILL_SWITCH detected! Initiating graceful shutdown...', 'warn');
-             isGracefulKill = true;
-             isShuttingDown = true;
-             resetKillSwitch();
+            if (isLeader) {
+              if (leaderWaiting) {
+                resetKillSwitch();
+              } else {
+                log('Remote KILL_SWITCH detected! Waiting for other workers to read the flag...', 'warn');
+                leaderWaiting = true;
+                triggerBackgroundFlush(); // so that I can cancel the workflow without losing much progress
+              }
+              return;
+            }
+            log('Remote KILL_SWITCH detected! Initiating graceful shutdown...', 'warn');
+            isGracefulKill = true;
+            isShuttingDown = true;
           }
         });
       }
