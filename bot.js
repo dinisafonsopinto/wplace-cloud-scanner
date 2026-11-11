@@ -253,7 +253,15 @@ async function fetchPixelOfficial(tileX, tileY, pixelX, pixelY) {
 }
 
 async function checkKillSwitch() {
-  if (!process.env.GH_PAT || !process.env.REPO) return false;
+  if (!process.env.GH_PAT) {
+    log('Kill switch bypassed: GH_PAT environment variable is missing.', 'warn');
+    return false;
+  }
+  if (!process.env.REPO) {
+    log('Kill switch bypassed: REPO environment variable is missing.', 'warn');
+    return false;
+  }
+  
   try {
     const res = await fetch(`https://api.github.com/repos/${process.env.REPO}/actions/variables/KILL_SWITCH`, {
       headers: {
@@ -263,12 +271,16 @@ async function checkKillSwitch() {
       },
       signal: AbortSignal.timeout(5000)
     });
+    
     if (res.ok) {
       const data = await res.json();
-      return data.value === 'true';
+      log(`Kill switch ping successful. Current value: ${data.value}`);
+      return data.value === 'true' || data.value === true;
+    } else {
+      log(`Kill switch API check failed: HTTP ${res.status} ${res.statusText}. (Check your PAT permissions!)`, 'error');
     }
   } catch (err) {
-    // Ignore network blips during polling
+    log(`Kill switch network error: ${err.message}`, 'error');
   }
   return false;
 }
