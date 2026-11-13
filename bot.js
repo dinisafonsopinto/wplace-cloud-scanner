@@ -398,9 +398,9 @@ async function run() {
       const png = tileDataMap.get(tileKey);
       const neighborColor = getTilePixelColor(png, coords.pixelX, coords.pixelY);
 
-      const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
-      const cachedColor = (cachedPixel && cachedPixel.c !== null && cachedPixel.c !== undefined) ? cachedPixel.c : -1;
-      if (cachedColor === neighborColor) continue;
+      // const cachedPixel = cacheMap.get(tileKey)?.[`${coords.pixelX}_${coords.pixelY}`];
+      // const cachedColor = (cachedPixel && cachedPixel.c !== null && cachedPixel.c !== undefined) ? cachedPixel.c : -1;
+      // if (cachedColor === neighborColor) continue;
 
       visitedPixels.add(key);
       const taskObj = {
@@ -525,6 +525,7 @@ async function run() {
     let consecutiveSuccesses = 0, scannedThisCycle = 0;
     let consecutiveSkips = 0;
     let discoveriesToFlush = {};
+    let cycleDiscoveredPixels = 0;
 
     let lastRequestStart = null;
 
@@ -705,7 +706,7 @@ async function run() {
       // MID-SCAN CHECK
       const liveCache = cloudCache.get(sectorKey)?.[`${pixelX}_${pixelY}`];
       if (liveCache && liveCache.c !== null && liveCache.c === currentColor) {
-        scannedThisCycle++;
+        // scannedThisCycle++;
         consecutiveSkips++;
 
         if (EXPANSION_ALGORITHM) await checkNeighbors(x, y, pngMap, cloudCache);
@@ -747,6 +748,7 @@ async function run() {
               an: res.an,
               c: currentColor,
             };
+            cycleDiscoveredPixels++;
           }
 
           if (EXPANSION_ALGORITHM) await checkNeighbors(x, y, pngMap, cloudCache);
@@ -766,7 +768,7 @@ async function run() {
 
             const nonBlankCount = coloredTasks.length + erasedTasks.length;
             if (taskIndex > nonBlankCount && pendingTasks.length > taskIndex) { // if taskIndex is well into the blank part of the queue
-              const discoveryRate = cycleFlushedPixels / scannedThisCycle;
+              const discoveryRate = cycleDiscoveredPixels / scannedThisCycle;
               
               // If less than FLUSH_MINIMUM% of our scanned pixels are useful, clear the rest of the blanks
               if (discoveryRate < FLUSH_MINIMUM) { 
