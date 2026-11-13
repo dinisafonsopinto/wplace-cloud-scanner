@@ -70,6 +70,10 @@ on:
         description: 'Pause between Cycles (s)'
         required: false
         type: string
+      flush_interval:
+        description: 'Flush Interval (px)'
+        required: false
+        type: string
       flush_minimum:
         description: 'Flush Minimum Rate (%)'
         required: false
@@ -236,6 +240,6 @@ jobs:
           PENALTY_MS_429: ${{ inputs.penalty_ms_429 != '' && inputs.penalty_ms_429 || vars.PENALTY_MS_429 || '500' }}
           STEP_DOWN_MS: ${{ inputs.step_down_ms != '' && inputs.step_down_ms || vars.STEP_DOWN_MS || '21' }}
           STREAK_REQS: ${{ inputs.streak_reqs != '' && inputs.streak_reqs || vars.STREAK_REQS || '42' }}
-          FLUSH_INTERVAL: ${{ vars.FLUSH_INTERVAL || '1000' }}
+          FLUSH_INTERVAL: ${{ inputs.flush_interval != '' && inputs.flush_interval || vars.FLUSH_INTERVAL || '1000' }}
           EXPANSION_RATE: ${{ inputs.expansion_rate != '' && inputs.expansion_rate || vars.EXPANSION_RATE || '10' }}
         run: exec node bot.js
