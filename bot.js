@@ -30,7 +30,7 @@ const CFG_PENALTY_MS_429 = parseEnvInt(process.env.PENALTY_MS_429, 500);
 const CFG_STEP_DOWN_MS = parseEnvInt(process.env.STEP_DOWN_MS, 21);
 const CFG_STREAK_REQS = parseEnvInt(process.env.STREAK_REQS, 42);
 const FLUSH_INTERVAL = parseEnvInt(process.env.FLUSH_INTERVAL, 1000);
-const FLUSH_MINIMUM = parseEnvInt(process.env.FLUSH_MINIMUM, 0.02);
+const FLUSH_MINIMUM = parseEnvInt(process.env.FLUSH_MINIMUM, 2) / 100;
 
 const EXPANSION_ALGORITHM = process.env.EXPANSION_ALGORITHM === 'true';
 const LIMIT_EXPANSION = process.env.LIMIT_EXPANSION === 'true'; // limits the expansion to the tiles already affected by the scan
@@ -769,6 +769,7 @@ async function run() {
             const nonBlankCount = coloredTasks.length + erasedTasks.length;
             if (taskIndex > nonBlankCount && pendingTasks.length > taskIndex) { // if taskIndex is well into the blank part of the queue
               const discoveryRate = cycleDiscoveredPixels / scannedThisCycle;
+              const cycleDiscoveredPixels = 0;
               
               // If less than FLUSH_MINIMUM% of our scanned pixels are useful, clear the rest of the blanks
               if (discoveryRate < FLUSH_MINIMUM) { 
