@@ -431,6 +431,7 @@ async function run() {
     log(`Step down: ${CFG_STEP_DOWN_MS}ms`);
     log(`Streak reqs: ${CFG_STREAK_REQS}`);
     log(`Flush interval: ${FLUSH_INTERVAL} pixels`);
+    log(`Flush minimum: ${FLUSH_MINIMUM * 100}%`);
     log(`Expansion algorithm: ${EXPANSION_ALGORITHM}`);
     log(`Limit expansion: ${LIMIT_EXPANSION}`);
     log(`Expansion rate: ${EXPANSION_RATE}`);
@@ -768,7 +769,7 @@ async function run() {
 
             const nonBlankCount = coloredTasks.length + erasedTasks.length;
             if (taskIndex > nonBlankCount && pendingTasks.length > taskIndex) { // if taskIndex is well into the blank part of the queue
-              const discoveryRate = cycleDiscoveredPixels / scannedThisCycle;
+              const discoveryRate = cycleDiscoveredPixels / FLUSH_INTERVAL;
               const cycleDiscoveredPixels = 0;
               
               // If less than FLUSH_MINIMUM% of our scanned pixels are useful, clear the rest of the blanks
