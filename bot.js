@@ -770,7 +770,7 @@ async function run() {
             const nonBlankCount = coloredTasks.length + erasedTasks.length;
             if (taskIndex > nonBlankCount && pendingTasks.length > taskIndex) { // if taskIndex is well into the blank part of the queue
               const discoveryRate = cycleDiscoveredPixels / FLUSH_INTERVAL;
-              const cycleDiscoveredPixels = 0;
+              cycleDiscoveredPixels = 0;
               
               // If less than FLUSH_MINIMUM% of our scanned pixels are useful, clear the rest of the blanks
               if (discoveryRate < FLUSH_MINIMUM) { 
